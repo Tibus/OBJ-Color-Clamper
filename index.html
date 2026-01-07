@@ -1189,6 +1189,8 @@
       const defaultName = loadedFile.name.replace('.obj', '_clamped.obj');
       const name = prompt("chose the file name", defaultName);
       
+      if(name === null || name === undefined) return;
+      
       const blob = new Blob([processedContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
