@@ -370,7 +370,7 @@
         </div>
         <div class="param-group">
           <label for="islandThreshold">Island Threshold</label>
-          <input type="number" id="islandThreshold" value="10" min="1" max="1000">
+          <input type="number" id="islandThreshold" value="100" min="1" max="10000">
           <span class="param-help">Merge isolated regions smaller than this</span>
         </div>
       </div>
@@ -1186,11 +1186,14 @@
     downloadBtn.addEventListener('click', () => {
       if (!processedContent) return;
 
+      const defaultName = loadedFile.name.replace('.obj', '_clamped.obj');
+      const name = prompt("chose the file name", defaultName);
+      
       const blob = new Blob([processedContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = loadedFile.name.replace('.obj', '_clamped.obj');
+      a.download = name;//loadedFile.name.replace('.obj', '_clamped.obj');
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
