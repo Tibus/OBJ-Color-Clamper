@@ -19,7 +19,7 @@ function exportOBJContent(vertices, originalLines, vertexLineIndices) {
 }
 
 // ============================================================================
-// 3MF Export with paint_color attribute (Bambu/Prusa compatible)
+// 3MF Export with mmu_segmentation attribute (Bambu/Prusa compatible)
 // ============================================================================
 
 async function generate3MF() {
