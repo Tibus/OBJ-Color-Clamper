@@ -278,6 +278,12 @@ async function processPrimitive(primitive, gltf, binChunk, textures, vertices, f
   for (let i = 0; i < positions.length; i++) {
     const pos = positions[i];
     let color = null;
+    let uv = null;
+
+    // Store UV for potential re-baking later
+    if (uvs && uvs[i]) {
+      uv = [uvs[i][0], uvs[i][1]];
+    }
 
     // Priority: 1. Sample texture, 2. Use vertex color, 3. Default white
     if (texture && uvs && uvs[i]) {
@@ -296,7 +302,8 @@ async function processPrimitive(primitive, gltf, binChunk, textures, vertices, f
       x: pos[0],
       y: pos[1],
       z: pos[2],
-      color: color
+      color: color,
+      uv: uv
     });
     localToGlobal.push(baseVertexIndex + i);
   }

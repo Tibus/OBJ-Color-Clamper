@@ -46,6 +46,14 @@
           <input type="number" id="islandThreshold" value="100" min="1" max="1000">
           <span class="param-help">Merge isolated regions smaller than this</span>
         </div>
+        <div class="param-group">
+          <label for="algorithm">Selection Algorithm</label>
+          <select id="algorithm" class="param-select">
+            <option value="frequency">Frequency</option>
+            <option value="greedy">Greedy</option>
+          </select>
+          <span class="param-help">How to select palette colors</span>
+        </div>
       </div>
     </div>
 
@@ -141,6 +149,7 @@
   <script src="js/colorProcessing.js"></script>
   <script src="js/islands.js"></script>
   <script src="js/export.js"></script>
+  <script src="js/textureQuantization.js"></script>
   <script src="js/texturePreview.js"></script>
   <script src="js/processing.js"></script>
   <script src="js/modal.js"></script>

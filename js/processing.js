@@ -9,6 +9,7 @@ function sleep(ms) {
 async function processFile() {
   const numColors = parseInt(document.getElementById('numColors').value);
   const threshold = parseInt(document.getElementById('islandThreshold').value);
+  const useGreedy = document.getElementById('algorithm').value === 'greedy';
 
   clearLog();
   elements.progressContainer.classList.add('show');
@@ -16,9 +17,10 @@ async function processFile() {
   elements.logCard.classList.remove('show');
   elements.processBtn.disabled = true;
 
-  // Reset textures
+  // Reset textures and GLB palette
   originalTexture = null;
   clampedTexture = null;
+  glbExtractedPalette = null;
   hideTexturePreview();
 
   const reader = new FileReader();
@@ -58,15 +60,34 @@ async function processFile() {
         log('Extracting textures...', 'info');
 
         const parsed = await parseGLB(e.target.result);
-        vertices = parsed.vertices;
-        faces = parsed.faces;
-        vertexLineIndices = null;
-        originalLines = null;
 
         // Store original texture for preview
         originalTexture = parsed.texture;
 
-        log('Baking textures to vertex colors...', 'info');
+        // Pre-quantize texture to target number of colors
+        if (parsed.texture) {
+          updateProgress(12, 'Quantizing texture...');
+          await sleep(20);
+
+          const { quantizedTexture, extractedPalette } = preprocessGLBTexture(parsed.texture, numColors);
+
+          // Re-bake vertex colors using quantized texture
+          log('Baking quantized texture to vertex colors...', 'info');
+          for (const vertex of parsed.vertices) {
+            if (vertex.uv && quantizedTexture) {
+              vertex.color = sampleTexture(quantizedTexture, vertex.uv[0], 1 - vertex.uv[1]);
+            }
+          }
+
+          // Store quantized palette for later use
+          glbExtractedPalette = extractedPalette;
+          clampedTexture = quantizedTexture;
+        }
+
+        vertices = parsed.vertices;
+        faces = parsed.faces;
+        vertexLineIndices = null;
+        originalLines = null;
       }
 
       log(`  ${vertices.length} vertices, ${faces.length} faces`);
@@ -81,17 +102,33 @@ async function processFile() {
         return;
       }
 
-      updateProgress(30, 'Selecting colors...');
-      log('\nSelecting best colors...', 'info');
-      await sleep(20);
-      const palette = selectBestColors(colors, COLOR_POOL, numColors);
+      let palette;
 
-      log('\nSelected palette:', 'highlight');
-      palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
+      // For GLB with pre-quantized texture, use extracted palette
+      if (loadedFileType === 'glb' && glbExtractedPalette && glbExtractedPalette.length > 0) {
+        updateProgress(30, 'Using extracted palette...');
+        log('\nUsing colors extracted from texture:', 'highlight');
+        palette = glbExtractedPalette;
+        palette.forEach((c, i) => log(`  ${i + 1}. ${c.toHex()}`));
 
-      updateProgress(50, 'Remapping colors...');
-      await sleep(20);
-      remapColors(vertices, palette);
+        // Colors are already baked from quantized texture, just need to ensure they match palette exactly
+        updateProgress(50, 'Finalizing vertex colors...');
+        await sleep(20);
+        remapColors(vertices, palette);
+      } else {
+        // For OBJ/STL, select from COLOR_POOL
+        updateProgress(30, 'Selecting colors...');
+        log(`\nSelecting best colors (${useGreedy ? 'Greedy' : 'Frequency'})...`, 'info');
+        await sleep(20);
+        palette = selectBestColors(colors, COLOR_POOL, numColors, useGreedy);
+
+        log('\nSelected palette:', 'highlight');
+        palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
+
+        updateProgress(50, 'Remapping colors...');
+        await sleep(20);
+        remapColors(vertices, palette);
+      }
 
       updateProgress(60, 'Merging vertex islands...');
       log('\nMerging small islands...', 'info');
@@ -115,9 +152,8 @@ async function processFile() {
       }
       processedData = { vertices, faces };
 
-      // Generate clamped texture preview for GLB
-      if (loadedFileType === 'glb' && originalTexture) {
-        clampedTexture = generateClampedTexture(originalTexture, palette);
+      // Display texture preview for GLB (texture already quantized during loading)
+      if (loadedFileType === 'glb' && originalTexture && clampedTexture) {
         displayTexturePreview(originalTexture, clampedTexture);
       }
 

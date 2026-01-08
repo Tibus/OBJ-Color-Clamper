@@ -10,3 +10,4 @@ let selectedFormat = 'obj';
 let finalPalette = null;
 let originalTexture = null; // Texture originale du GLB
 let clampedTexture = null;  // Texture après clamping
+let glbExtractedPalette = null; // Palette extraite de la texture GLB
