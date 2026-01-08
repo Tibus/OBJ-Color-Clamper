@@ -1,0 +1,144 @@
+// ============================================================================
+// OBJ Export
+// ============================================================================
+
+function exportOBJContent(vertices, originalLines, vertexLineIndices) {
+  const lines = [...originalLines];
+
+  let vertexIdx = 0;
+  for (const lineIdx of vertexLineIndices) {
+    const vertex = vertices[vertexIdx++];
+    if (vertex.color) {
+      lines[lineIdx] = `v ${vertex.x} ${vertex.y} ${vertex.z} ${vertex.color.r.toFixed(6)} ${vertex.color.g.toFixed(6)} ${vertex.color.b.toFixed(6)}`;
+    } else {
+      lines[lineIdx] = `v ${vertex.x} ${vertex.y} ${vertex.z}`;
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// 3MF Export with paint_color attribute (Bambu/Prusa compatible)
+// ============================================================================
+
+async function generate3MF() {
+  const { vertices, faces } = processedData;
+
+  // Build color index map using user-assigned MMU indices from finalPalette
+  const colorMap = new Map();
+  for (const item of finalPalette) {
+    colorMap.set(item.color.name, {
+      index: item.mmuIndex,
+      color: item.color
+    });
+  }
+
+  // Build vertices XML
+  let verticesXml = '';
+  for (const vertex of vertices) {
+    verticesXml += `        <vertex x="${vertex.x}" y="${vertex.y}" z="${vertex.z}" />\n`;
+  }
+
+  // Build triangles XML with mmu_segmentation attribute
+  let trianglesXml = '';
+  const mmu = ["1", "4", "8", "0C", "1C"];
+
+  for (const face of faces) {
+    if (face.length < 3) continue;
+
+    // Get dominant color of the face
+    const colorCounts = new Map();
+    for (const vi of face) {
+      const colorName = vertices[vi]?.color?.name;
+      if (colorName) {
+        colorCounts.set(colorName, (colorCounts.get(colorName) || 0) + 1);
+      }
+    }
+
+    let dominantColor = null;
+    let maxCount = 0;
+    for (const [name, count] of colorCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantColor = name;
+      }
+    }
+
+    const paintColor = dominantColor && colorMap.has(dominantColor)
+      ? colorMap.get(dominantColor).index
+      : 1;
+
+    // Fan triangulation for polygons
+    for (let i = 1; i < face.length - 1; i++) {
+      const v1 = face[0];
+      const v2 = face[i];
+      const v3 = face[i + 1];
+      if (paintColor === 1) {
+        trianglesXml += `        <triangle v1="${v1}" v2="${v2}" v3="${v3}" />\n`;
+      } else {
+        trianglesXml += `        <triangle v1="${v1}" v2="${v2}" v3="${v3}" slic3rpe:mmu_segmentation="${mmu[paintColor]}" />\n`;
+      }
+    }
+  }
+
+  // Main model XML with Bambu/Prusa extensions
+  const modelXml = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06">
+ <metadata name="slic3rpe:Version3mf">1</metadata>
+ <metadata name="slic3rpe:MmPaintingVersion">1</metadata>
+ <metadata name="Designer"></metadata>
+ <metadata name="Description"></metadata>
+ <metadata name="Copyright"></metadata>
+ <metadata name="LicenseTerms"></metadata>
+ <metadata name="Rating"></metadata>
+ <metadata name="CreationDate"></metadata>
+ <metadata name="ModificationDate"></metadata>
+ <metadata name="Application">PrusaSlicer-2.9.2</metadata>
+  <resources>
+   <object id="1" type="model">
+    <mesh>
+     <vertices>
+${verticesXml}        </vertices>
+     <triangles>
+${trianglesXml}        </triangles>
+     </mesh>
+    </object>
+  </resources>
+ <build>
+  <item objectid="1" />
+ </build>
+</model>`;
+
+  // Content Types
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`;
+
+  // Relationships
+  const rels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+
+  // Create ZIP
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypes);
+  zip.folder('_rels').file('.rels', rels);
+  zip.folder('3D').file('3dmodel.model', modelXml);
+
+  return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
