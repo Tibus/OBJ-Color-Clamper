@@ -6,7 +6,7 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function processOBJ() {
+async function processFile() {
   const numColors = parseInt(document.getElementById('numColors').value);
   const threshold = parseInt(document.getElementById('islandThreshold').value);
 
@@ -16,14 +16,59 @@ async function processOBJ() {
   elements.logCard.classList.remove('show');
   elements.processBtn.disabled = true;
 
+  // Reset textures
+  originalTexture = null;
+  clampedTexture = null;
+  hideTexturePreview();
+
   const reader = new FileReader();
+
   reader.onload = async e => {
     try {
-      updateProgress(10, 'Parsing OBJ...');
-      log('Parsing OBJ file...', 'info');
-      await sleep(20);
+      let vertices, faces, vertexLineIndices, originalLines;
 
-      const { vertices, vertexLineIndices, originalLines, faces } = parseOBJ(e.target.result);
+      if (loadedFileType === 'obj') {
+        updateProgress(10, 'Parsing OBJ...');
+        log('Parsing OBJ file...', 'info');
+        await sleep(20);
+
+        const parsed = parseOBJ(e.target.result);
+        vertices = parsed.vertices;
+        faces = parsed.faces;
+        vertexLineIndices = parsed.vertexLineIndices;
+        originalLines = parsed.originalLines;
+
+      } else if (loadedFileType === 'stl') {
+        updateProgress(10, 'Parsing STL...');
+        log('Parsing STL file...', 'info');
+        await sleep(20);
+
+        const parsed = parseSTL(e.target.result);
+        vertices = parsed.vertices;
+        faces = parsed.faces;
+        vertexLineIndices = null;
+        originalLines = null;
+
+      } else if (loadedFileType === 'glb') {
+        updateProgress(5, 'Parsing GLB...');
+        log('Parsing GLB file...', 'info');
+        await sleep(20);
+
+        updateProgress(8, 'Extracting textures...');
+        log('Extracting textures...', 'info');
+
+        const parsed = await parseGLB(e.target.result);
+        vertices = parsed.vertices;
+        faces = parsed.faces;
+        vertexLineIndices = null;
+        originalLines = null;
+
+        // Store original texture for preview
+        originalTexture = parsed.texture;
+
+        log('Baking textures to vertex colors...', 'info');
+      }
+
       log(`  ${vertices.length} vertices, ${faces.length} faces`);
 
       updateProgress(20, 'Building graphs...');
@@ -32,6 +77,7 @@ async function processOBJ() {
       const colors = vertices.filter(v => v.color).map(v => v.color);
       if (!colors.length) {
         log('\nNo vertex colors found!', 'error');
+        elements.processBtn.disabled = false;
         return;
       }
 
@@ -59,8 +105,21 @@ async function processOBJ() {
 
       updateProgress(90, 'Generating output...');
       await sleep(20);
-      processedOBJ = exportOBJContent(vertices, originalLines, vertexLineIndices);
+
+      // Generate OBJ content
+      if (loadedFileType === 'obj') {
+        processedOBJ = exportOBJContent(vertices, originalLines, vertexLineIndices);
+      } else {
+        // For STL/GLB, generate new OBJ from scratch
+        processedOBJ = generateOBJFromData(vertices, faces);
+      }
       processedData = { vertices, faces };
+
+      // Generate clamped texture preview for GLB
+      if (loadedFileType === 'glb' && originalTexture) {
+        clampedTexture = generateClampedTexture(originalTexture, palette);
+        displayTexturePreview(originalTexture, clampedTexture);
+      }
 
       const finalStats = {};
       palette.forEach(c => finalStats[c.name] = 0);
@@ -82,5 +141,14 @@ async function processOBJ() {
     }
     elements.processBtn.disabled = false;
   };
-  reader.readAsText(loadedFile);
+
+  // Read file with appropriate method
+  if (loadedFileType === 'obj') {
+    reader.readAsText(loadedFile);
+  } else {
+    reader.readAsArrayBuffer(loadedFile);
+  }
 }
+
+// Alias for backward compatibility
+const processOBJ = processFile;

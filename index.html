@@ -8,16 +8,17 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎨 OBJ Color Clamper</h1>
+    <h1>🎨 3D Color Clamper</h1>
     <p class="subtitle">Reduce vertex colors to a limited palette for 3D printing</p>
 
     <!-- File Upload -->
     <div class="card">
-      <h2>1. Select OBJ File</h2>
+      <h2>1. Select File</h2>
       <div class="file-drop-zone" id="dropZone">
         <div class="icon">📁</div>
-        <div>Drop your OBJ file here or <strong>click to browse</strong></div>
-        <input type="file" id="fileInput" accept=".obj">
+        <div>Drop your file here or <strong>click to browse</strong></div>
+        <div class="supported-formats">Supported: OBJ, STL, GLB</div>
+        <input type="file" id="fileInput" accept=".obj,.stl,.glb">
       </div>
       <div class="file-info" id="fileInfo">
         <strong id="fileName"></strong><br>
@@ -51,13 +52,29 @@
     <!-- Process Button -->
     <div class="card">
       <button class="btn-process" id="processBtn" disabled>
-        <span>⚙️</span> Process OBJ
+        <span>⚙️</span> Process File
       </button>
       <div class="progress-container" id="progressContainer">
         <div class="progress-bar">
           <div class="progress-bar-fill" id="progressFill"></div>
         </div>
         <div class="progress-text" id="progressText">Processing...</div>
+      </div>
+    </div>
+
+    <!-- Texture Preview (GLB only) -->
+    <div class="card" id="texturePreviewContainer" style="display: none;">
+      <h2>Texture Preview</h2>
+      <div class="texture-comparison">
+        <div class="texture-box">
+          <div class="texture-label">Original</div>
+          <div class="texture-preview" id="originalTexturePreview"></div>
+        </div>
+        <div class="texture-arrow">→</div>
+        <div class="texture-box">
+          <div class="texture-label">Clamped</div>
+          <div class="texture-preview" id="clampedTexturePreview"></div>
+        </div>
       </div>
     </div>
 
@@ -118,10 +135,13 @@
   <script src="js/ui.js"></script>
   <script src="js/fileHandling.js"></script>
   <script src="js/objParser.js"></script>
+  <script src="js/stlParser.js"></script>
+  <script src="js/glbParser.js"></script>
   <script src="js/adjacency.js"></script>
   <script src="js/colorProcessing.js"></script>
   <script src="js/islands.js"></script>
   <script src="js/export.js"></script>
+  <script src="js/texturePreview.js"></script>
   <script src="js/processing.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/main.js"></script>

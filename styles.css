@@ -84,6 +84,12 @@ h1 {
   margin-bottom: 10px;
 }
 
+.file-drop-zone .supported-formats {
+  margin-top: 12px;
+  font-size: 0.85rem;
+  color: #888;
+}
+
 .file-info {
   margin-top: 15px;
   padding: 12px;
@@ -526,4 +532,53 @@ h1 {
 
 .log-line.highlight {
   color: #f39c12;
+}
+
+/* Texture Preview */
+.texture-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.texture-box {
+  text-align: center;
+}
+
+.texture-label {
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #ccc;
+}
+
+.texture-preview {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 10px;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.texture-preview .texture-canvas {
+  max-width: 300px;
+  max-height: 300px;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+
+.texture-arrow {
+  font-size: 2rem;
+  color: #f39c12;
+}
+
+@media (max-width: 700px) {
+  .texture-comparison {
+    flex-direction: column;
+  }
+
+  .texture-arrow {
+    transform: rotate(90deg);
+  }
 }
