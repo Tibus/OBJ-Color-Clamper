@@ -165,7 +165,41 @@ function quantizeTexture(texture, palette) {
 }
 
 /**
- * Pre-process GLB texture: extract colors and quantize
+ * Match extracted colors to closest colors in COLOR_POOL
+ * @param {Array} extractedColors - Colors extracted from texture
+ * @param {Array} colorPool - Available colors (COLOR_POOL)
+ * @returns {Array} Matched colors from colorPool (no duplicates)
+ */
+function matchToColorPool(extractedColors, colorPool) {
+  const matchedColors = [];
+  const usedIndices = new Set();
+
+  for (const extracted of extractedColors) {
+    let minDist = Infinity;
+    let bestIdx = -1;
+
+    // Find closest unused color in pool
+    for (let i = 0; i < colorPool.length; i++) {
+      if (usedIndices.has(i)) continue;
+
+      const dist = extracted.distanceTo(colorPool[i]);
+      if (dist < minDist) {
+        minDist = dist;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0) {
+      matchedColors.push(colorPool[bestIdx]);
+      usedIndices.add(bestIdx);
+    }
+  }
+
+  return matchedColors;
+}
+
+/**
+ * Pre-process GLB texture: extract colors, match to pool, and quantize
  * @param {Object} texture - Original texture
  * @param {number} numColors - Target number of colors
  * @returns {Object} { quantizedTexture, extractedPalette }
@@ -175,17 +209,26 @@ function preprocessGLBTexture(texture, numColors) {
 
   log(`Analyzing texture (${texture.width}x${texture.height})...`, 'info');
 
-  // Extract representative colors from texture
-  const extractedPalette = extractTextureColors(texture, numColors);
+  // Extract representative colors from texture using k-means
+  const extractedColors = extractTextureColors(texture, numColors);
 
-  log(`Extracted ${extractedPalette.length} colors from texture:`, 'info');
-  extractedPalette.forEach((c, i) => {
+  log(`Extracted ${extractedColors.length} dominant colors:`, 'info');
+  extractedColors.forEach((c, i) => {
     log(`  ${i + 1}. ${c.toHex()}`);
   });
 
-  // Quantize texture to extracted palette
-  log('Quantizing texture...', 'info');
-  const quantizedTexture = quantizeTexture(texture, extractedPalette);
+  // Match extracted colors to closest colors in COLOR_POOL
+  log('Matching to available filament colors...', 'info');
+  const matchedPalette = matchToColorPool(extractedColors, COLOR_POOL);
 
-  return { quantizedTexture, extractedPalette };
+  log(`Matched palette:`, 'highlight');
+  matchedPalette.forEach((c, i) => {
+    log(`  ${i + 1}. ${c.name} ${c.toHex()}`);
+  });
+
+  // Quantize texture to matched COLOR_POOL colors
+  log('Quantizing texture to filament colors...', 'info');
+  const quantizedTexture = quantizeTexture(texture, matchedPalette);
+
+  return { quantizedTexture, extractedPalette: matchedPalette };
 }
