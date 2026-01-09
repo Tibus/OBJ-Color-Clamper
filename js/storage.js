@@ -1,5 +1,5 @@
 // ============================================================================
-// LocalStorage pour MMU
+// LocalStorage for MMU
 // ============================================================================
 
 const MMU_STORAGE_KEY = 'objColorClamper_mmuIndices';
