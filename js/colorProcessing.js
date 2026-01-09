@@ -13,11 +13,20 @@ function selectBestColorsFrequencyNoPool(vertexColors, count, maxIterations = 20
     });
   }
 
+  // Seeded PRNG for deterministic results (mulberry32)
+  let seed = 12345;
+  const random = () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
   // K-means++ initialization
   const centroids = [];
 
   // First centroid: randomly chosen
-  const firstIdx = Math.floor(Math.random() * vertexColors.length);
+  const firstIdx = Math.floor(random() * vertexColors.length);
   centroids.push(vertexColors[firstIdx].clone());
 
   // Next centroids: probability proportional to D(x)²
@@ -37,11 +46,11 @@ function selectBestColorsFrequencyNoPool(vertexColors, count, maxIterations = 20
     }
 
     // Weighted selection
-    let random = Math.random() * totalDist;
+    let r = random() * totalDist;
     let selectedIdx = 0;
     for (let i = 0; i < distances.length; i++) {
-      random -= distances[i];
-      if (random <= 0) {
+      r -= distances[i];
+      if (r <= 0) {
         selectedIdx = i;
         break;
       }
