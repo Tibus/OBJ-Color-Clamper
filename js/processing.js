@@ -9,7 +9,9 @@ function sleep(ms) {
 async function processFile() {
   const numColors = parseInt(document.getElementById('numColors').value);
   const threshold = parseInt(document.getElementById('islandThreshold').value);
-  const useGreedy = document.getElementById('algorithm').value === 'greedy';
+  const useColorPool = document.getElementById('useColorPool').checked;
+
+  // const useGreedy = document.getElementById('algorithm').value === 'greedy';
 
   clearLog();
   elements.progressContainer.classList.add('show');
@@ -69,7 +71,7 @@ async function processFile() {
           updateProgress(12, 'Quantizing texture...');
           await sleep(20);
 
-          const { quantizedTexture, extractedPalette } = preprocessGLBTexture(parsed.texture, numColors);
+          const { quantizedTexture, extractedPalette } = preprocessGLBTexture(parsed.texture, numColors, useColorPool);
 
           // Re-bake vertex colors using quantized texture
           log('Baking quantized texture to vertex colors...', 'info');
@@ -116,14 +118,21 @@ async function processFile() {
         await sleep(20);
         remapColors(vertices, palette);
       } else {
-        // For OBJ/STL, select from COLOR_POOL
-        updateProgress(30, 'Selecting colors...');
-        log(`\nSelecting best colors (${useGreedy ? 'Greedy' : 'Frequency'})...`, 'info');
-        await sleep(20);
-        palette = selectBestColors(colors, COLOR_POOL, numColors, useGreedy);
+        if (useColorPool) {
+          // For OBJ/STL, select from COLOR_POOL
+          updateProgress(40, 'Matching to filament colors...');
+          await sleep(20);
+          palette = selectBestColorsFrequency(colors, COLOR_POOL, numColors);
 
-        log('\nSelected palette:', 'highlight');
-        palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
+          log('\nSelected palette:', 'highlight');
+          palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
+        }else{
+          const extractedColors = selectBestColorsFrequencyNoPool(colors, numColors);
+          // Use extracted colors directly
+          log('\nUsing extracted colors directly:', 'highlight');
+          palette = extractedColors;
+          palette.forEach((c, i) => log(`  ${i + 1}. ${c.toHex()}`));
+        }
 
         updateProgress(50, 'Remapping colors...');
         await sleep(20);

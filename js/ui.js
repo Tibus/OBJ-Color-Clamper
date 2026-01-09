@@ -25,6 +25,7 @@ function initElements() {
   elements.formatOptions = document.querySelectorAll('.format-option');
   elements.btnCancel = document.getElementById('btnCancel');
   elements.btnConfirm = document.getElementById('btnConfirm');
+  elements.useColorPoolToggle = document.getElementById('useColorPool');
 }
 
 // ============================================================================
@@ -47,7 +48,9 @@ function initNumColorsSelect() {
   const select = document.getElementById('numColors');
   const defaultValue = 4;
 
-  for (let i = 1; i <= COLOR_POOL.length; i++) {
+  // Max 20 colors when not using color pool
+  const maxColors = 20;
+  for (let i = 1; i <= maxColors; i++) {
     const option = document.createElement('option');
     option.value = i;
     option.textContent = i;
@@ -56,6 +59,20 @@ function initNumColorsSelect() {
     }
     select.appendChild(option);
   }
+}
+
+function initColorPoolToggle() {
+  const updateColorPoolVisibility = () => {
+    const useColorPool = elements.useColorPoolToggle.checked;
+    if (useColorPool) {
+      elements.colorPool.classList.remove('hidden');
+    } else {
+      elements.colorPool.classList.add('hidden');
+    }
+  };
+
+  elements.useColorPoolToggle.addEventListener('change', updateColorPoolVisibility);
+  updateColorPoolVisibility();
 }
 
 // ============================================================================

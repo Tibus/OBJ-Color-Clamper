@@ -26,9 +26,18 @@
       </div>
     </div>
 
-    <!-- Color Pool -->
+    <!-- Color Pool Toggle -->
     <div class="card">
-      <h2>2. Available Colors</h2>
+      <div class="toggle-row">
+        <label class="toggle-label" for="useColorPool">
+          <span>Use filament color palette</span>
+          <span class="toggle-help">Match extracted colors to available filaments. It's best to use a palette when you use an OBJ file that you paint yourself.</span>
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="useColorPool" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
       <div class="color-grid" id="colorPool"></div>
     </div>
 
@@ -45,14 +54,6 @@
           <label for="islandThreshold">Island Threshold</label>
           <input type="number" id="islandThreshold" value="100" min="1" max="1000">
           <span class="param-help">Merge isolated regions smaller than this</span>
-        </div>
-        <div class="param-group">
-          <label for="algorithm">Selection Algorithm</label>
-          <select id="algorithm" class="param-select">
-            <option value="frequency">Frequency</option>
-            <option value="greedy">Greedy</option>
-          </select>
-          <span class="param-help">How to select palette colors</span>
         </div>
       </div>
     </div>

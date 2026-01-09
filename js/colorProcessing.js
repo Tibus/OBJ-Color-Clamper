@@ -2,6 +2,50 @@
 // Color Selection & Remapping
 // ============================================================================
 
+// Algorithm 0: Frequency-based sans pool (regroupe les couleurs similaires des vertices)
+function selectBestColorsFrequencyNoPool(vertexColors, count, similarityThreshold = 1) {
+  const clusters = [];
+
+  for (const vertexColor of vertexColors) {
+    let foundCluster = false;
+
+    for (const cluster of clusters) {
+      const dist = vertexColor.distanceTo(cluster.representative);
+      if (dist < similarityThreshold) {
+        cluster.count++;
+        // Moyenne pondérée pour le représentant
+        cluster.representative.r = (cluster.representative.r * (cluster.count - 1) + vertexColor.r) / cluster.count;
+        cluster.representative.g = (cluster.representative.g * (cluster.count - 1) + vertexColor.g) / cluster.count;
+        cluster.representative.b = (cluster.representative.b * (cluster.count - 1) + vertexColor.b) / cluster.count;
+        foundCluster = true;
+        break;
+      }
+    }
+
+    if (!foundCluster) {
+      clusters.push({
+        representative: vertexColor.clone(),
+        count: 1
+      });
+    }
+  }
+
+  clusters.sort((a, b) => b.count - a.count);
+
+  log('\nClusters de couleurs trouvés:', 'info');
+  for (let i = 0; i < Math.min(clusters.length, count + 3); i++) {
+    const c = clusters[i];
+    const hex = `#${Math.round(c.representative.r * 255).toString(16).padStart(2, '0')}${Math.round(c.representative.g * 255).toString(16).padStart(2, '0')}${Math.round(c.representative.b * 255).toString(16).padStart(2, '0')}`;
+    log(`  Cluster ${i + 1}: ${c.count} vertices (${hex})`);
+  }
+
+  return clusters.slice(0, count).map((cluster, idx) => {
+    const color = cluster.representative.clone();
+    color.name = `color_${idx + 1}`;
+    return color;
+  });
+}
+
 // Algorithm 1: Frequency-based (select most frequent colors)
 function selectBestColorsFrequency(vertexColors, poolColors, count) {
   const stats = poolColors.map(color => ({
@@ -37,100 +81,11 @@ function selectBestColorsFrequency(vertexColors, poolColors, count) {
   return sorted.filter(s => s.matchCount > 0).slice(0, count).map(s => s.color);
 }
 
-// Algorithm 2: Greedy (iteratively select color that best covers remaining vertices)
-function selectBestColorsGreedy(vertexColors, poolColors, count) {
-  const selectedColors = [];
-  const selectedIndices = new Set();
 
-  // Map each vertex to its closest pool color index
-  const vertexToPoolIdx = vertexColors.map(vc => {
-    let minDist = Infinity;
-    let closestIdx = 0;
-    for (let i = 0; i < poolColors.length; i++) {
-      const dist = vc.distanceTo(poolColors[i]);
-      if (dist < minDist) {
-        minDist = dist;
-        closestIdx = i;
-      }
-    }
-    return closestIdx;
-  });
-
-  log('\nGreedy color selection:', 'info');
-
-  for (let round = 0; round < count; round++) {
-    // Count how many vertices map to each unselected pool color
-    const coverage = poolColors.map(() => 0);
-
-    for (let i = 0; i < vertexColors.length; i++) {
-      const poolIdx = vertexToPoolIdx[i];
-      // Only count if this pool color hasn't been selected yet
-      if (!selectedIndices.has(poolIdx)) {
-        coverage[poolIdx]++;
-      }
-    }
-
-    // Select color with best coverage (most vertices)
-    let bestIdx = -1;
-    let bestCount = 0;
-
-    for (let i = 0; i < poolColors.length; i++) {
-      if (selectedIndices.has(i)) continue;
-
-      if (coverage[i] > bestCount) {
-        bestCount = coverage[i];
-        bestIdx = i;
-      }
-    }
-
-    // If no color has any coverage, pick any remaining color
-    if (bestIdx < 0) {
-      for (let i = 0; i < poolColors.length; i++) {
-        if (!selectedIndices.has(i)) {
-          bestIdx = i;
-          break;
-        }
-      }
-    }
-
-    if (bestIdx < 0) break; // No more colors available
-
-    const selectedColor = poolColors[bestIdx];
-    selectedColors.push(selectedColor);
-    selectedIndices.add(bestIdx);
-    log(`  ${round + 1}. ${selectedColor.name}: covers ${bestCount} vertices`);
-
-    // Reassign vertices that were mapped to the selected color to their next closest unselected color
-    for (let i = 0; i < vertexColors.length; i++) {
-      if (vertexToPoolIdx[i] === bestIdx) {
-        // Find next closest unselected pool color
-        let minDist = Infinity;
-        let newClosestIdx = -1;
-        for (let j = 0; j < poolColors.length; j++) {
-          if (selectedIndices.has(j)) continue;
-          const dist = vertexColors[i].distanceTo(poolColors[j]);
-          if (dist < minDist) {
-            minDist = dist;
-            newClosestIdx = j;
-          }
-        }
-        if (newClosestIdx >= 0) {
-          vertexToPoolIdx[i] = newClosestIdx;
-        }
-      }
-    }
-  }
-
-  return selectedColors;
-}
 
 // Main selection function (uses algorithm based on parameter)
-function selectBestColors(vertexColors, poolColors, count, useGreedy = false) {
-  if (useGreedy) {
-    return selectBestColorsGreedy(vertexColors, poolColors, count);
-  } else {
-    return selectBestColorsFrequency(vertexColors, poolColors, count);
-  }
+function selectBestColors(vertexColors, poolColors, count) {
+  return selectBestColorsFrequency(vertexColors, poolColors, count);
 }
 
 function remapColors(vertices, palette) {

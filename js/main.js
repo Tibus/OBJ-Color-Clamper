@@ -6,6 +6,7 @@ function init() {
   initElements();
   initColorPool();
   initNumColorsSelect();
+  initColorPoolToggle();
   initFileHandling();
   initModal();
   elements.processBtn.addEventListener('click', processOBJ);

@@ -1,5 +1,5 @@
 // ============================================================================
-// Texture Quantization - Reduce texture to N colors before vertex baking
+// Color Quantization - Reduce colors to N using k-means++ clustering
 // ============================================================================
 
 /**
@@ -86,41 +86,125 @@ function extractTextureColors(texture, numColors) {
 }
 
 /**
+ * Extract representative colors from vertex colors using k-means clustering
+ * @param {Array} vertexColors - Array of Color objects
+ * @param {number} numColors - Target number of colors
+ * @returns {Array} Array of Color objects representing the palette
+ */
+function extractVertexColors(vertexColors, numColors) {
+  if (vertexColors.length === 0) {
+    return [new Color(1, 1, 1)];
+  }
+
+  // Sample if too many vertices
+  const maxSamples = 10000;
+  let samples = vertexColors;
+  if (vertexColors.length > maxSamples) {
+    const sampleRate = Math.floor(vertexColors.length / maxSamples);
+    samples = vertexColors.filter((_, i) => i % sampleRate === 0);
+  }
+
+  // Use k-means++ initialization
+  const centroids = initializeCentroids(samples, numColors);
+
+  // Run k-means clustering
+  const maxIterations = 20;
+  for (let iter = 0; iter < maxIterations; iter++) {
+    const clusters = centroids.map(() => []);
+
+    for (const sample of samples) {
+      let minDist = Infinity;
+      let closestIdx = 0;
+
+      for (let i = 0; i < centroids.length; i++) {
+        const dist = sample.distanceTo(centroids[i]);
+        if (dist < minDist) {
+          minDist = dist;
+          closestIdx = i;
+        }
+      }
+
+      clusters[closestIdx].push(sample);
+    }
+
+    let converged = true;
+    for (let i = 0; i < centroids.length; i++) {
+      if (clusters[i].length === 0) continue;
+
+      const avgR = clusters[i].reduce((sum, c) => sum + c.r, 0) / clusters[i].length;
+      const avgG = clusters[i].reduce((sum, c) => sum + c.g, 0) / clusters[i].length;
+      const avgB = clusters[i].reduce((sum, c) => sum + c.b, 0) / clusters[i].length;
+
+      const newCentroid = new Color(avgR, avgG, avgB);
+      if (centroids[i].distanceTo(newCentroid) > 0.001) {
+        converged = false;
+      }
+      centroids[i] = newCentroid;
+    }
+
+    if (converged) break;
+  }
+
+  // Name colors using hex codes
+  centroids.forEach((c) => {
+    c.name = c.toHex();
+  });
+
+  return centroids;
+}
+
+/**
  * K-means++ initialization - select initial centroids that are well spread out
+ * Uses deterministic selection for reproducible results
  */
 function initializeCentroids(samples, k) {
   const centroids = [];
 
-  // First centroid: random sample
-  const firstIdx = Math.floor(Math.random() * samples.length);
+  // First centroid: pick the most "average" color (closest to mean)
+  let avgR = 0, avgG = 0, avgB = 0;
+  for (const s of samples) {
+    avgR += s.r;
+    avgG += s.g;
+    avgB += s.b;
+  }
+  avgR /= samples.length;
+  avgG /= samples.length;
+  avgB /= samples.length;
+  const avgColor = new Color(avgR, avgG, avgB);
+
+  let minDistToAvg = Infinity;
+  let firstIdx = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const dist = samples[i].distanceTo(avgColor);
+    if (dist < minDistToAvg) {
+      minDistToAvg = dist;
+      firstIdx = i;
+    }
+  }
   centroids.push(samples[firstIdx].clone());
 
-  // Subsequent centroids: choose with probability proportional to distance squared
+  // Subsequent centroids: pick the sample farthest from existing centroids (deterministic)
   for (let i = 1; i < k; i++) {
-    const distances = samples.map(sample => {
+    let maxMinDist = -1;
+    let bestIdx = 0;
+
+    for (let j = 0; j < samples.length; j++) {
+      // Find minimum distance to any existing centroid
       let minDist = Infinity;
       for (const centroid of centroids) {
-        const dist = sample.distanceTo(centroid);
+        const dist = samples[j].distanceTo(centroid);
         if (dist < minDist) minDist = dist;
       }
-      return minDist * minDist; // Square for probability weighting
-    });
 
-    const totalDist = distances.reduce((a, b) => a + b, 0);
-    if (totalDist === 0) break;
-
-    // Weighted random selection
-    let random = Math.random() * totalDist;
-    let selectedIdx = 0;
-    for (let j = 0; j < distances.length; j++) {
-      random -= distances[j];
-      if (random <= 0) {
-        selectedIdx = j;
-        break;
+      // Select the sample with the maximum minimum distance
+      if (minDist > maxMinDist) {
+        maxMinDist = minDist;
+        bestIdx = j;
       }
     }
 
-    centroids.push(samples[selectedIdx].clone());
+    if (maxMinDist <= 0) break;
+    centroids.push(samples[bestIdx].clone());
   }
 
   return centroids;
@@ -204,7 +288,7 @@ function matchToColorPool(extractedColors, colorPool) {
  * @param {number} numColors - Target number of colors
  * @returns {Object} { quantizedTexture, extractedPalette }
  */
-function preprocessGLBTexture(texture, numColors) {
+function preprocessGLBTexture(texture, numColors, useColorPool) {
   if (!texture) return { quantizedTexture: null, extractedPalette: [] };
 
   log(`Analyzing texture (${texture.width}x${texture.height})...`, 'info');
@@ -217,18 +301,30 @@ function preprocessGLBTexture(texture, numColors) {
     log(`  ${i + 1}. ${c.toHex()}`);
   });
 
-  // Match extracted colors to closest colors in COLOR_POOL
-  log('Matching to available filament colors...', 'info');
-  const matchedPalette = matchToColorPool(extractedColors, COLOR_POOL);
+  if (useColorPool) {
+    // Match extracted colors to closest colors in COLOR_POOL
+    log('Matching to available filament colors...', 'info');
+    const matchedPalette = matchToColorPool(extractedColors, COLOR_POOL);
 
-  log(`Matched palette:`, 'highlight');
-  matchedPalette.forEach((c, i) => {
-    log(`  ${i + 1}. ${c.name} ${c.toHex()}`);
-  });
+    log(`Matched palette:`, 'highlight');
+    matchedPalette.forEach((c, i) => {
+      log(`  ${i + 1}. ${c.name} ${c.toHex()}`);
+    });
 
-  // Quantize texture to matched COLOR_POOL colors
-  log('Quantizing texture to filament colors...', 'info');
-  const quantizedTexture = quantizeTexture(texture, matchedPalette);
+    // Quantize texture to matched COLOR_POOL colors
+    log('Quantizing texture to filament colors...', 'info');
+    const quantizedTexture = quantizeTexture(texture, matchedPalette);
 
-  return { quantizedTexture, extractedPalette: matchedPalette };
+    return { quantizedTexture, extractedPalette: matchedPalette };
+  } else {
+    // Use extracted colors directly
+    log('Using extracted colors directly:', 'highlight');
+    extractedColors.forEach((c, i) => {
+      log(`  ${i + 1}. ${c.toHex()}`);
+    });
+
+    log('Quantizing texture...', 'info');
+    const quantizedTexture = quantizeTexture(texture, extractedColors);
+    return { quantizedTexture, extractedPalette: extractedColors };
+  }
 }
