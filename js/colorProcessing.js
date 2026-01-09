@@ -2,44 +2,121 @@
 // Color Selection & Remapping
 // ============================================================================
 
-// Algorithm 0: Frequency-based sans pool (regroupe les couleurs similaires des vertices)
-function selectBestColorsFrequencyNoPool(vertexColors, count, similarityThreshold = 1) {
-  const clusters = [];
+// Algorithm 0: K-means++ without pool (clustering vertex colors)
+function selectBestColorsFrequencyNoPool(vertexColors, count, maxIterations = 20) {
+  if (vertexColors.length === 0) return [];
+  if (vertexColors.length <= count) {
+    return vertexColors.map((c, idx) => {
+      const color = c.clone();
+      color.name = `color_${idx + 1}`;
+      return color;
+    });
+  }
 
-  for (const vertexColor of vertexColors) {
-    let foundCluster = false;
+  // K-means++ initialization
+  const centroids = [];
 
-    for (const cluster of clusters) {
-      const dist = vertexColor.distanceTo(cluster.representative);
-      if (dist < similarityThreshold) {
-        cluster.count++;
-        // Moyenne pondérée pour le représentant
-        cluster.representative.r = (cluster.representative.r * (cluster.count - 1) + vertexColor.r) / cluster.count;
-        cluster.representative.g = (cluster.representative.g * (cluster.count - 1) + vertexColor.g) / cluster.count;
-        cluster.representative.b = (cluster.representative.b * (cluster.count - 1) + vertexColor.b) / cluster.count;
-        foundCluster = true;
+  // First centroid: randomly chosen
+  const firstIdx = Math.floor(Math.random() * vertexColors.length);
+  centroids.push(vertexColors[firstIdx].clone());
+
+  // Next centroids: probability proportional to D(x)²
+  while (centroids.length < count) {
+    const distances = [];
+    let totalDist = 0;
+
+    for (const color of vertexColors) {
+      let minDist = Infinity;
+      for (const centroid of centroids) {
+        const dist = color.distanceTo(centroid);
+        if (dist < minDist) minDist = dist;
+      }
+      const distSquared = minDist * minDist;
+      distances.push(distSquared);
+      totalDist += distSquared;
+    }
+
+    // Weighted selection
+    let random = Math.random() * totalDist;
+    let selectedIdx = 0;
+    for (let i = 0; i < distances.length; i++) {
+      random -= distances[i];
+      if (random <= 0) {
+        selectedIdx = i;
         break;
       }
     }
+    centroids.push(vertexColors[selectedIdx].clone());
+  }
 
-    if (!foundCluster) {
-      clusters.push({
-        representative: vertexColor.clone(),
-        count: 1
-      });
+  // K-means iterations
+  let assignments = new Array(vertexColors.length);
+
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // Assignment step: assign each point to nearest centroid
+    let changed = false;
+    for (let i = 0; i < vertexColors.length; i++) {
+      let minDist = Infinity;
+      let closestIdx = 0;
+      for (let j = 0; j < centroids.length; j++) {
+        const dist = vertexColors[i].distanceTo(centroids[j]);
+        if (dist < minDist) {
+          minDist = dist;
+          closestIdx = j;
+        }
+      }
+      if (assignments[i] !== closestIdx) {
+        assignments[i] = closestIdx;
+        changed = true;
+      }
+    }
+
+    if (!changed && iter > 0) {
+      log(`  K-means++ converged after ${iter} iterations`, 'info');
+      break;
+    }
+
+    // Update step: recalculate centroids
+    const sums = centroids.map(() => ({ r: 0, g: 0, b: 0, count: 0 }));
+    for (let i = 0; i < vertexColors.length; i++) {
+      const cluster = assignments[i];
+      sums[cluster].r += vertexColors[i].r;
+      sums[cluster].g += vertexColors[i].g;
+      sums[cluster].b += vertexColors[i].b;
+      sums[cluster].count++;
+    }
+
+    for (let j = 0; j < centroids.length; j++) {
+      if (sums[j].count > 0) {
+        centroids[j].r = sums[j].r / sums[j].count;
+        centroids[j].g = sums[j].g / sums[j].count;
+        centroids[j].b = sums[j].b / sums[j].count;
+      }
     }
   }
 
-  clusters.sort((a, b) => b.count - a.count);
+  // Count vertices per cluster
+  const counts = new Array(centroids.length).fill(0);
+  for (const assignment of assignments) {
+    counts[assignment]++;
+  }
 
-  log('\nClusters de couleurs trouvés:', 'info');
-  for (let i = 0; i < Math.min(clusters.length, count + 3); i++) {
-    const c = clusters[i];
+  // Create results with counts
+  const results = centroids.map((centroid, idx) => ({
+    representative: centroid,
+    count: counts[idx]
+  }));
+
+  results.sort((a, b) => b.count - a.count);
+
+  log('\nK-means++ clusters found:', 'info');
+  for (let i = 0; i < results.length; i++) {
+    const c = results[i];
     const hex = `#${Math.round(c.representative.r * 255).toString(16).padStart(2, '0')}${Math.round(c.representative.g * 255).toString(16).padStart(2, '0')}${Math.round(c.representative.b * 255).toString(16).padStart(2, '0')}`;
     log(`  Cluster ${i + 1}: ${c.count} vertices (${hex})`);
   }
 
-  return clusters.slice(0, count).map((cluster, idx) => {
+  return results.map((cluster, idx) => {
     const color = cluster.representative.clone();
     color.name = `color_${idx + 1}`;
     return color;
