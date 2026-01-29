@@ -109,11 +109,14 @@ function loadModelToViewer(vertices, faces) {
   const colors = [];
 
   for (const face of faces) {
+    // Support both formats: face.vertices (from parser) or face as array
+    const faceIndices = face.vertices || face;
+
     // Fan triangulation for faces with more than 3 vertices
-    for (let i = 1; i < face.length - 1; i++) {
-      const i0 = face[0];
-      const i1 = face[i];
-      const i2 = face[i + 1];
+    for (let i = 1; i < faceIndices.length - 1; i++) {
+      const i0 = faceIndices[0];
+      const i1 = faceIndices[i];
+      const i2 = faceIndices[i + 1];
 
       const v0 = vertices[i0];
       const v1 = vertices[i1];

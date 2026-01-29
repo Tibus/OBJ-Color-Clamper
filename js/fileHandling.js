@@ -2,7 +2,7 @@
 // File Handling
 // ============================================================================
 
-const SUPPORTED_EXTENSIONS = ['.obj', '.stl', '.glb'];
+const SUPPORTED_EXTENSIONS = ['.obj', '.stl', '.glb', '.3mf'];
 
 function isSupportedFile(filename) {
   const lower = filename.toLowerCase();
@@ -14,6 +14,7 @@ function getFileType(filename) {
   if (lower.endsWith('.obj')) return 'obj';
   if (lower.endsWith('.stl')) return 'stl';
   if (lower.endsWith('.glb')) return 'glb';
+  if (lower.endsWith('.3mf')) return '3mf';
   return null;
 }
 
@@ -144,6 +145,31 @@ function handleFile(file) {
         }
       } catch (err) {
         elements.fileStats.textContent = 'Error reading GLB file';
+        elements.fileInfo.classList.add('show');
+      }
+      hideLoader();
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (loadedFileType === '3mf') {
+    const reader = new FileReader();
+    reader.onload = async e => {
+      try {
+        const buffer = e.target.result;
+        const parsed = await parse3MF(buffer);
+
+        elements.fileStats.textContent = `${parsed.vertices.length.toLocaleString()} vertices, ${parsed.faces.length.toLocaleString()} faces (3MF)`;
+        elements.fileInfo.classList.add('show');
+        elements.processBtn.disabled = false;
+
+        parsedModelData = {
+          vertices: parsed.vertices,
+          faces: parsed.faces
+        };
+        loadModelToViewer(parsed.vertices, parsed.faces);
+        initColorPicker();
+      } catch (err) {
+        console.error('Error parsing 3MF:', err);
+        elements.fileStats.textContent = 'Error reading 3MF file: ' + err.message;
         elements.fileInfo.classList.add('show');
       }
       hideLoader();

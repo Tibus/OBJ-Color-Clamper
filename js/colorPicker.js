@@ -35,8 +35,6 @@ function onViewerClick(event) {
   const dy = event.clientY - mouseDownPos.y;
   const distance = Math.sqrt(dx * dx + dy * dy);
 
-  console.log("distance > DRAG_THRESHOLD", distance, DRAG_THRESHOLD, mouseDownPos, event.clientX, event.clientY);
-
   if (distance > DRAG_THRESHOLD) {
     return; // It was a drag, not a click
   }

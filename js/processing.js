@@ -102,6 +102,17 @@ async function processFile() {
         faces = parsed.faces;
         vertexLineIndices = null;
         originalLines = null;
+
+      } else if (loadedFileType === '3mf') {
+        updateProgress(10, 'Parsing 3MF...');
+        log('Parsing 3MF file...', 'info');
+        await sleep(20);
+
+        const parsed = await parse3MF(e.target.result);
+        vertices = parsed.vertices;
+        faces = parsed.faces;
+        vertexLineIndices = null;
+        originalLines = null;
       }
 
       log(`  ${vertices.length} vertices, ${faces.length} faces`);

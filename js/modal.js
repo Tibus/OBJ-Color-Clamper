@@ -13,7 +13,9 @@ function initModal() {
 
   elements.downloadBtn.addEventListener('click', () => {
     if (!processedOBJ) return;
-    elements.exportFilename.value = loadedFile.name.replace(/\.obj$/i, '') + '_clamped';
+    // Remove any supported extension from filename
+    const baseName = loadedFile.name.replace(/\.(obj|stl|glb|3mf)$/i, '');
+    elements.exportFilename.value = baseName + '_clamped';
     elements.modalOverlay.classList.add('show');
   });
 
