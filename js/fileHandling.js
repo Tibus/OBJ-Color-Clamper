@@ -52,7 +52,8 @@ function handleFile(file) {
   clearViewer();
   parsedModelData = null;
 
-  console.log("loadedFileType", loadedFileType);
+  // Show loader
+  showLoader('Loading file...');
 
   if (loadedFileType === 'obj') {
     const reader = new FileReader();
@@ -79,6 +80,7 @@ function handleFile(file) {
       } catch (err) {
         console.error('Error parsing OBJ for viewer:', err);
       }
+      hideLoader();
     };
     reader.readAsText(file);
   } else if (loadedFileType === 'stl') {
@@ -108,6 +110,7 @@ function handleFile(file) {
         elements.fileStats.textContent = 'Error reading STL file';
         elements.fileInfo.classList.add('show');
       }
+      hideLoader();
     };
     reader.readAsArrayBuffer(file);
   } else if (loadedFileType === 'glb') {
@@ -143,6 +146,7 @@ function handleFile(file) {
         elements.fileStats.textContent = 'Error reading GLB file';
         elements.fileInfo.classList.add('show');
       }
+      hideLoader();
     };
     reader.readAsArrayBuffer(file);
   }

@@ -161,3 +161,23 @@ function displayResults(palette, stats) {
   elements.resultsCard.classList.add('show');
   elements.logCard.classList.add('show');
 }
+
+// ============================================================================
+// Loader
+// ============================================================================
+
+function showLoader(text = 'Loading...') {
+  const overlay = document.getElementById('loaderOverlay');
+  const loaderText = document.getElementById('loaderText');
+  if (overlay) {
+    if (loaderText) loaderText.textContent = text;
+    overlay.classList.add('show');
+  }
+}
+
+function hideLoader() {
+  const overlay = document.getElementById('loaderOverlay');
+  if (overlay) {
+    overlay.classList.remove('show');
+  }
+}

@@ -32,10 +32,13 @@ function initModal() {
     elements.modalOverlay.classList.remove('show');
 
     if (selectedFormat === 'obj') {
-      downloadBlob(new Blob([processedOBJ], { type: 'text/plain' }), filename + '.obj');
+      showLoader('Exporting OBJ...');
+      setTimeout(() => {
+        downloadBlob(new Blob([processedOBJ], { type: 'text/plain' }), filename + '.obj');
+        hideLoader();
+      }, 100);
     } else {
-      elements.btnConfirm.disabled = true;
-      elements.btnConfirm.textContent = 'Generating...';
+      showLoader('Generating 3MF...');
       try {
         const blob = await generate3MF();
         downloadBlob(blob, filename + '.3mf');
@@ -43,8 +46,7 @@ function initModal() {
         alert('3MF export error: ' + err.message);
         console.error(err);
       }
-      elements.btnConfirm.disabled = false;
-      elements.btnConfirm.textContent = 'Download';
+      hideLoader();
     }
   });
 }
