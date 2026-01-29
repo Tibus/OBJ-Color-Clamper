@@ -286,12 +286,27 @@ function matchToColorPool(extractedColors, colorPool) {
  * Pre-process GLB texture: extract colors, match to pool, and quantize
  * @param {Object} texture - Original texture
  * @param {number} numColors - Target number of colors
+ * @param {boolean} useColorPool - Whether to match to COLOR_POOL
+ * @param {Array} pickedColors - User-picked colors (optional, takes priority)
  * @returns {Object} { quantizedTexture, extractedPalette }
  */
-function preprocessGLBTexture(texture, numColors, useColorPool) {
+function preprocessGLBTexture(texture, numColors, useColorPool, pickedColors = null) {
   if (!texture) return { quantizedTexture: null, extractedPalette: [] };
 
   log(`Analyzing texture (${texture.width}x${texture.height})...`, 'info');
+
+  // Priority 1: Use picked colors if provided
+  if (pickedColors && pickedColors.length > 0) {
+    const palette = pickedColors.slice(0, numColors);
+    log('Using user-picked colors for texture:', 'highlight');
+    palette.forEach((c, i) => {
+      log(`  ${i + 1}. ${c.name} ${c.toHex()}`);
+    });
+
+    log('Quantizing texture to picked colors...', 'info');
+    const quantizedTexture = quantizeTexture(texture, palette);
+    return { quantizedTexture, extractedPalette: palette };
+  }
 
   // Extract representative colors from texture using k-means
   const extractedColors = extractTextureColors(texture, numColors);

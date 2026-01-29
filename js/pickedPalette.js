@@ -24,12 +24,14 @@ function initPickedPalette() {
         useColorPoolToggle.checked = false;
         elements.colorPool.classList.add('hidden');
       }
+      updateNumColorsFromPicked();
     });
 
     useColorPoolToggle.addEventListener('change', () => {
       if (useColorPoolToggle.checked) {
         usePickedToggle.checked = false;
       }
+      updateNumColorsFromPicked();
     });
   }
 
@@ -49,6 +51,9 @@ function initPickedPalette() {
       useColorPoolToggle.checked = false;
       elements.colorPool.classList.add('hidden');
     }
+
+    // Update numColors to match picked palette
+    updateNumColorsFromPicked();
   }
 }
 
@@ -111,6 +116,7 @@ function renderPickedPalette() {
 
   if (pickedPalette.length === 0) {
     grid.innerHTML = '<div class="picked-palette-empty">No colors picked yet</div>';
+    updateNumColorsFromPicked();
     return;
   }
 
@@ -131,4 +137,34 @@ function renderPickedPalette() {
       removeColorFromPalette(index);
     });
   });
+
+  updateNumColorsFromPicked();
+}
+
+function updateNumColorsFromPicked() {
+  const numColorsSelect = document.getElementById('numColors');
+  const usePickedToggle = document.getElementById('usePickedColorsToggle');
+  const paramHelp = numColorsSelect ? numColorsSelect.parentElement.querySelector('.param-help') : null;
+
+  if (!numColorsSelect) return;
+
+  const isUsingPicked = usePickedToggle && usePickedToggle.checked;
+  const hasPickedColors = pickedPalette.length > 0;
+
+  if (isUsingPicked && hasPickedColors) {
+    // Set value to number of picked colors and disable
+    numColorsSelect.value = pickedPalette.length;
+    numColorsSelect.disabled = true;
+    numColorsSelect.parentElement.classList.add('disabled');
+    if (paramHelp) {
+      paramHelp.textContent = `Using ${pickedPalette.length} picked color${pickedPalette.length > 1 ? 's' : ''}`;
+    }
+  } else {
+    // Re-enable the select
+    numColorsSelect.disabled = false;
+    numColorsSelect.parentElement.classList.remove('disabled');
+    if (paramHelp) {
+      paramHelp.textContent = 'How many colors to use';
+    }
+  }
 }

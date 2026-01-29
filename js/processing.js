@@ -81,7 +81,9 @@ async function processFile() {
           updateProgress(12, 'Quantizing texture...');
           await sleep(20);
 
-          const { quantizedTexture, extractedPalette } = preprocessGLBTexture(parsed.texture, numColors, useColorPool);
+          // Pass picked colors if toggle is on
+          const pickedColorsForTexture = (usePickedColors && userPickedColors.length > 0) ? userPickedColors : null;
+          const { quantizedTexture, extractedPalette } = preprocessGLBTexture(parsed.texture, numColors, useColorPool, pickedColorsForTexture);
 
           // Re-bake vertex colors using quantized texture
           log('Baking quantized texture to vertex colors...', 'info');

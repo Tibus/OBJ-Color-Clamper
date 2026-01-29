@@ -264,6 +264,19 @@ h1 {
   color: #888;
 }
 
+.param-group.disabled {
+  opacity: 0.5;
+}
+
+.param-group.disabled select {
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.param-group.disabled .param-help {
+  color: #666;
+}
+
 /* Buttons */
 .btn-process {
   width: 100%;
