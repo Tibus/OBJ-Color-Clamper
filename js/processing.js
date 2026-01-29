@@ -10,6 +10,9 @@ async function processFile() {
   const numColors = parseInt(document.getElementById('numColors').value);
   const threshold = parseInt(document.getElementById('islandThreshold').value);
   const useColorPool = document.getElementById('useColorPool').checked;
+  const usePickedToggle = document.getElementById('usePickedColorsToggle');
+  const usePickedColors = usePickedToggle && usePickedToggle.checked;
+  const userPickedColors = getPickedColors();
 
   // const useGreedy = document.getElementById('algorithm').value === 'greedy';
 
@@ -118,7 +121,17 @@ async function processFile() {
         await sleep(20);
         remapColors(vertices, palette);
       } else {
-        if (useColorPool) {
+        // Priority 1: User-picked colors
+        if (usePickedColors && userPickedColors.length > 0) {
+          updateProgress(40, 'Using picked colors...');
+          await sleep(20);
+          // Use picked colors, limited to numColors
+          palette = userPickedColors.slice(0, numColors);
+          log('\nUsing user-picked colors:', 'highlight');
+          palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
+        }
+        // Priority 2: COLOR_POOL (filament colors)
+        else if (useColorPool) {
           // For OBJ/STL, select from COLOR_POOL
           updateProgress(40, 'Matching to filament colors...');
           await sleep(20);
@@ -126,7 +139,9 @@ async function processFile() {
 
           log('\nSelected palette:', 'highlight');
           palette.forEach((c, i) => log(`  ${i + 1}. ${c.name} ${c.toHex()}`));
-        }else{
+        }
+        // Priority 3: K-means extraction
+        else {
           const extractedColors = selectBestColorsFrequencyNoPool(colors, numColors);
           // Use extracted colors directly
           log('\nUsing extracted colors directly:', 'highlight');

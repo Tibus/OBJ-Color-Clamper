@@ -26,6 +26,30 @@
       </div>
     </div>
 
+    <!-- 3D Viewer -->
+    <div class="card" id="viewerCard" style="display: none;">
+      <h2>Model Preview</h2>
+      <p class="viewer-instructions">Click on the model to pick colors</p>
+      <div id="viewer3DContainer" class="viewer-container"></div>
+    </div>
+
+    <!-- Picked Colors -->
+    <div class="card" id="pickedPaletteCard" style="display: none;">
+      <h2>Picked Colors</h2>
+      <div class="toggle-row">
+        <label class="toggle-label" for="usePickedColorsToggle">
+          <span>Use picked colors</span>
+          <span class="toggle-help">Use your hand-picked colors instead of automatic selection</span>
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="usePickedColorsToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="pickedPaletteGrid" class="picked-palette-grid"></div>
+      <button class="btn-clear-palette" id="clearPaletteBtn">Clear All</button>
+    </div>
+
     <!-- Color Pool Toggle -->
     <div class="card">
       <div class="toggle-row">
@@ -138,9 +162,12 @@
 
   <!-- Scripts -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="js/Color.js"></script>
   <script src="js/state.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/pickedPaletteStorage.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/fileHandling.js"></script>
   <script src="js/objParser.js"></script>
@@ -152,6 +179,9 @@
   <script src="js/export.js"></script>
   <script src="js/textureQuantization.js"></script>
   <script src="js/texturePreview.js"></script>
+  <script src="js/viewer3D.js"></script>
+  <script src="js/colorPicker.js"></script>
+  <script src="js/pickedPalette.js"></script>
   <script src="js/processing.js"></script>
   <script src="js/modal.js"></script>
   <script src="js/main.js"></script>

@@ -9,6 +9,8 @@ function init() {
   initColorPoolToggle();
   initFileHandling();
   initModal();
+  initViewer3D('viewer3DContainer');
+  initPickedPalette();
   elements.processBtn.addEventListener('click', processOBJ);
 }
 
