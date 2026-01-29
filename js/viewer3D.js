@@ -308,6 +308,11 @@ function animateResultViewer() {
 function loadResultToViewer(vertices, faces) {
   if (!resultViewer3D.scene) return;
 
+  // Store for highlighting
+  resultViewer3D.vertices = vertices;
+  resultViewer3D.faces = faces;
+  resultViewer3D.originalColors = null;
+
   // Remove existing mesh
   if (resultViewer3D.mesh) {
     resultViewer3D.scene.remove(resultViewer3D.mesh);
@@ -400,4 +405,79 @@ function clearResultViewer() {
     resultViewer3D.mesh.material.dispose();
     resultViewer3D.mesh = null;
   }
+  resultViewer3D.originalColors = null;
+  resultViewer3D.vertices = null;
+  resultViewer3D.faces = null;
+}
+
+/**
+ * Highlight vertices of a specific color on the result model
+ * @param {Color} targetColor - The color to highlight
+ */
+function highlightResultColor(targetColor) {
+  if (!resultViewer3D.mesh || !resultViewer3D.vertices || !resultViewer3D.faces) return;
+
+  const geometry = resultViewer3D.mesh.geometry;
+  const colorAttribute = geometry.getAttribute('color');
+
+  // Store original colors if not already stored
+  if (!resultViewer3D.originalColors) {
+    resultViewer3D.originalColors = new Float32Array(colorAttribute.array);
+  }
+
+  const colors = colorAttribute.array;
+  const vertices = resultViewer3D.vertices;
+  const faces = resultViewer3D.faces;
+
+  // Tolerance for color matching
+  const tolerance = 0.05;
+
+  let colorIndex = 0;
+  for (const face of faces) {
+    const faceIndices = face.vertices || face;
+
+    for (let i = 1; i < faceIndices.length - 1; i++) {
+      const indices = [faceIndices[0], faceIndices[i], faceIndices[i + 1]];
+
+      for (const idx of indices) {
+        const v = vertices[idx];
+        const vc = v.color || { r: 0.5, g: 0.5, b: 0.5 };
+
+        // Check if this vertex matches the target color
+        const isMatch = Math.abs(vc.r - targetColor.r) < tolerance &&
+                        Math.abs(vc.g - targetColor.g) < tolerance &&
+                        Math.abs(vc.b - targetColor.b) < tolerance;
+
+        if (isMatch) {
+          // Brighten matched color
+          colors[colorIndex] = 1;//Math.min(1, vc.r * 1.3 + 0.2);
+          colors[colorIndex + 1] = 1;//Math.min(1, vc.g * 1.3 + 0.2);
+          colors[colorIndex + 2] = 1;//Math.min(1, vc.b * 1.3 + 0.2);
+        } else {
+          // Dim non-matched colors
+          colors[colorIndex] = 0;//vc.r * 0.1;
+          colors[colorIndex + 1] = 0;//vc.g * 0.1;
+          colors[colorIndex + 2] = 0;//vc.b * 0.1;
+        }
+
+        colorIndex += 3;
+      }
+    }
+  }
+
+  colorAttribute.needsUpdate = true;
+}
+
+/**
+ * Restore original colors on the result model
+ */
+function resetResultColors() {
+  if (!resultViewer3D.mesh || !resultViewer3D.originalColors) return;
+
+  const geometry = resultViewer3D.mesh.geometry;
+  const colorAttribute = geometry.getAttribute('color');
+
+  // Copy original colors back
+  colorAttribute.array.set(resultViewer3D.originalColors);
+  colorAttribute.needsUpdate = true;
 }

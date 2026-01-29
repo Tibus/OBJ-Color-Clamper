@@ -143,6 +143,15 @@ function displayResults(palette, stats) {
         </select>
       </div>
     `;
+
+    // Add hover handlers for highlighting on result viewer
+    div.addEventListener('mouseenter', () => {
+      highlightResultColor(item.color);
+    });
+    div.addEventListener('mouseleave', () => {
+      resetResultColors();
+    });
+
     elements.statsGrid.appendChild(div);
   });
 
