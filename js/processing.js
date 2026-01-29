@@ -22,6 +22,13 @@ async function processFile() {
   elements.logCard.classList.remove('show');
   elements.processBtn.disabled = true;
 
+  // Hide result viewer
+  const resultViewerCard = document.getElementById('resultViewerCard');
+  if (resultViewerCard) {
+    resultViewerCard.classList.remove('show');
+  }
+  clearResultViewer();
+
   // Reset textures and GLB palette
   originalTexture = null;
   clampedTexture = null;
@@ -195,6 +202,13 @@ async function processFile() {
       updateProgress(100, 'Done!');
       log('\n✓ Processing complete!', 'success');
       displayResults(palette, finalStats);
+
+      // Load result into 3D viewer
+      const resultViewerCard = document.getElementById('resultViewerCard');
+      if (resultViewerCard) {
+        resultViewerCard.classList.add('show');
+      }
+      loadResultToViewer(vertices, faces);
     } catch (err) {
       log(`\nError: ${err.message}`, 'error');
       console.error(err);

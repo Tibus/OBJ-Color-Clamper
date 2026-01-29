@@ -17,7 +17,6 @@ function initColorPicker() {
 
   const renderer = getViewerRenderer();
   if (renderer && renderer.domElement) {
-    console.log("renderer.domElement", renderer.domElement);
     renderer.domElement.addEventListener('pointerdown', onViewerMouseDown);
     renderer.domElement.addEventListener('click', onViewerClick);
     renderer.domElement.style.cursor = 'crosshair';
@@ -26,8 +25,6 @@ function initColorPicker() {
 }
 
 function onViewerMouseDown(event) {
-  console.log("onViewerMouseDown", event.clientX, event.clientY
-  );
   mouseDownPos.x = event.clientX;
   mouseDownPos.y = event.clientY;
 }

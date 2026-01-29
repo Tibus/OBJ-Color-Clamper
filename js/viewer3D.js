@@ -215,3 +215,186 @@ function getViewerRenderer() {
 function getViewerCamera() {
   return viewer3D.camera;
 }
+
+// ============================================================================
+// Result Viewer (for processed model)
+// ============================================================================
+
+let resultViewer3D = {
+  scene: null,
+  camera: null,
+  renderer: null,
+  controls: null,
+  mesh: null,
+  container: null,
+  animationId: null
+};
+
+function initResultViewer3D(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return false;
+
+  resultViewer3D.container = container;
+
+  // Clear any existing content
+  container.innerHTML = '';
+
+  // Create scene
+  resultViewer3D.scene = new THREE.Scene();
+  resultViewer3D.scene.background = new THREE.Color(0x1a1a2e);
+
+  // Create camera
+  const width = container.clientWidth || 400;
+  const height = container.clientHeight || 300;
+  resultViewer3D.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+  resultViewer3D.camera.position.set(0, 0, 5);
+
+  // Create renderer
+  resultViewer3D.renderer = new THREE.WebGLRenderer({ antialias: true });
+  resultViewer3D.renderer.setSize(width, height);
+  resultViewer3D.renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(resultViewer3D.renderer.domElement);
+
+  // Add OrbitControls
+  resultViewer3D.controls = new THREE.OrbitControls(resultViewer3D.camera, resultViewer3D.renderer.domElement);
+  resultViewer3D.controls.enableDamping = true;
+  resultViewer3D.controls.dampingFactor = 0.05;
+
+  // Add lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  resultViewer3D.scene.add(ambientLight);
+
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(5, 5, 5);
+  resultViewer3D.scene.add(directionalLight);
+
+  // Handle resize
+  window.addEventListener('resize', onResultViewerResize);
+
+  // Start animation loop
+  animateResultViewer();
+
+  return true;
+}
+
+function onResultViewerResize() {
+  if (!resultViewer3D.container || !resultViewer3D.camera || !resultViewer3D.renderer) return;
+
+  const width = resultViewer3D.container.clientWidth;
+  const height = resultViewer3D.container.clientHeight;
+
+  if (width === 0 || height === 0) return;
+
+  resultViewer3D.camera.aspect = width / height;
+  resultViewer3D.camera.updateProjectionMatrix();
+  resultViewer3D.renderer.setSize(width, height);
+}
+
+function animateResultViewer() {
+  resultViewer3D.animationId = requestAnimationFrame(animateResultViewer);
+
+  if (resultViewer3D.controls) {
+    resultViewer3D.controls.update();
+  }
+
+  if (resultViewer3D.renderer && resultViewer3D.scene && resultViewer3D.camera) {
+    resultViewer3D.renderer.render(resultViewer3D.scene, resultViewer3D.camera);
+  }
+}
+
+function loadResultToViewer(vertices, faces) {
+  if (!resultViewer3D.scene) return;
+
+  // Remove existing mesh
+  if (resultViewer3D.mesh) {
+    resultViewer3D.scene.remove(resultViewer3D.mesh);
+    resultViewer3D.mesh.geometry.dispose();
+    resultViewer3D.mesh.material.dispose();
+    resultViewer3D.mesh = null;
+  }
+
+  // Create geometry
+  const geometry = new THREE.BufferGeometry();
+
+  // Flatten vertices for triangles (each face becomes triangles)
+  const positions = [];
+  const colors = [];
+
+  for (const face of faces) {
+    // Support both formats: face.vertices (from parser) or face as array
+    const faceIndices = face.vertices || face;
+
+    // Fan triangulation for faces with more than 3 vertices
+    for (let i = 1; i < faceIndices.length - 1; i++) {
+      const i0 = faceIndices[0];
+      const i1 = faceIndices[i];
+      const i2 = faceIndices[i + 1];
+
+      const v0 = vertices[i0];
+      const v1 = vertices[i1];
+      const v2 = vertices[i2];
+
+      // Positions
+      positions.push(v0.x, v0.y, v0.z);
+      positions.push(v1.x, v1.y, v1.z);
+      positions.push(v2.x, v2.y, v2.z);
+
+      // Colors
+      const c0 = v0.color || new Color(0.5, 0.5, 0.5);
+      const c1 = v1.color || new Color(0.5, 0.5, 0.5);
+      const c2 = v2.color || new Color(0.5, 0.5, 0.5);
+
+      colors.push(c0.r, c0.g, c0.b);
+      colors.push(c1.r, c1.g, c1.b);
+      colors.push(c2.r, c2.g, c2.b);
+    }
+  }
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+
+  // Create material with vertex colors
+  const material = new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide
+  });
+
+  resultViewer3D.mesh = new THREE.Mesh(geometry, material);
+  resultViewer3D.scene.add(resultViewer3D.mesh);
+
+  // Auto-fit camera to bounds
+  fitResultCameraToObject(resultViewer3D.mesh);
+
+  // Update size after card becomes visible
+  requestAnimationFrame(() => {
+    onResultViewerResize();
+  });
+}
+
+function fitResultCameraToObject(object) {
+  const box = new THREE.Box3().setFromObject(object);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = resultViewer3D.camera.fov * (Math.PI / 180);
+  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+
+  cameraZ *= 1.5; // Add some padding
+
+  resultViewer3D.camera.position.set(center.x, center.y, center.z + cameraZ);
+  resultViewer3D.camera.lookAt(center);
+
+  resultViewer3D.controls.target.copy(center);
+  resultViewer3D.controls.update();
+}
+
+function clearResultViewer() {
+  if (resultViewer3D.mesh && resultViewer3D.scene) {
+    resultViewer3D.scene.remove(resultViewer3D.mesh);
+    resultViewer3D.mesh.geometry.dispose();
+    resultViewer3D.mesh.material.dispose();
+    resultViewer3D.mesh = null;
+  }
+}

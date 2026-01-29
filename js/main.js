@@ -10,6 +10,7 @@ function init() {
   initFileHandling();
   initModal();
   initViewer3D('viewer3DContainer');
+  initResultViewer3D('resultViewer3DContainer');
   initPickedPalette();
   elements.processBtn.addEventListener('click', processOBJ);
 }
