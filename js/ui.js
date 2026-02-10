@@ -104,8 +104,12 @@ function updateProgress(percent, text) {
 // Results Display
 // ============================================================================
 
+// Track the currently locked/highlighted color
+let lockedHighlightColor = null;
+
 function displayResults(palette, stats) {
   elements.statsGrid.innerHTML = '';
+  lockedHighlightColor = null; // Reset locked color when displaying new results
 
   const savedIndices = loadMmuIndices();
 
@@ -144,12 +148,39 @@ function displayResults(palette, stats) {
       </div>
     `;
 
-    // Add hover handlers for highlighting on result viewer
+    // Add hover and click handlers for highlighting on result viewer
     div.addEventListener('mouseenter', () => {
-      highlightResultColor(item.color);
+      // Only highlight on hover if no color is locked
+      if (!lockedHighlightColor) {
+        highlightResultColor(item.color);
+      }
     });
     div.addEventListener('mouseleave', () => {
-      resetResultColors();
+      // Only reset on mouse leave if no color is locked
+      if (!lockedHighlightColor) {
+        resetResultColors();
+      }
+    });
+    div.addEventListener('click', (e) => {
+      // Don't toggle lock if clicking on the MMU select dropdown
+      if (e.target.closest('.mmu-index-select')) return;
+
+      if (lockedHighlightColor === item.color) {
+        // Clicking on the locked color unlocks it
+        lockedHighlightColor = null;
+        div.classList.remove('locked');
+        resetResultColors();
+      } else {
+        // Remove locked class from previously locked item
+        const previouslyLocked = elements.statsGrid.querySelector('.stat-item.locked');
+        if (previouslyLocked) {
+          previouslyLocked.classList.remove('locked');
+        }
+        // Lock this color
+        lockedHighlightColor = item.color;
+        div.classList.add('locked');
+        highlightResultColor(item.color);
+      }
     });
 
     elements.statsGrid.appendChild(div);

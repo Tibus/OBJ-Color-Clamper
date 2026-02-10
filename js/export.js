@@ -64,7 +64,7 @@ async function generate3MF() {
 
   // Build triangles XML with mmu_segmentation attribute
   let trianglesXml = '';
-  const mmu = ["1", "4", "8", "0C", "1C"];
+  const mmu = ["1", "4", "8", "0C", "1C", "2C", "3C", "4C"]; // MMU segmentation values for up to 8 colors
 
   for (const face of faces) {
     if (face.length < 3) continue;
@@ -145,11 +145,17 @@ ${trianglesXml}        </triangles>
   <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>`;
 
+  const projectJson = {
+    filament_colour: finalPalette.map(item => item.color.toHex()),
+    filament_colour_type: finalPalette.map(item => "1"),
+  }
+
   // Create ZIP
   const zip = new JSZip();
   zip.file('[Content_Types].xml', contentTypes);
   zip.folder('_rels').file('.rels', rels);
   zip.folder('3D').file('3dmodel.model', modelXml);
+  zip.folder('Metadata').file('project_settings.config', JSON.stringify(projectJson, null, 2));
 
   return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
 }
