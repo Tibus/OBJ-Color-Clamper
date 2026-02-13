@@ -49,6 +49,27 @@ function handleFile(file) {
   loadedFileType = getFileType(file.name);
   elements.fileName.textContent = file.name;
 
+  // Reset results section
+  elements.resultsCard.classList.remove('show');
+  elements.logCard.classList.remove('show');
+  elements.progressContainer.classList.remove('show');
+  elements.statsGrid.innerHTML = '';
+  clearLog();
+  const resultViewerCard = document.getElementById('resultViewerCard');
+  if (resultViewerCard) {
+    resultViewerCard.classList.remove('show');
+  }
+  clearResultViewer();
+  hideTexturePreview();
+
+  // Reset processed state
+  processedOBJ = null;
+  processedData = null;
+  finalPalette = null;
+  originalTexture = null;
+  clampedTexture = null;
+  glbExtractedPalette = null;
+
   // Clear previous viewer
   clearViewer();
   parsedModelData = null;
