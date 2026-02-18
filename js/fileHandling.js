@@ -184,9 +184,10 @@ function handleFile(file) {
 
         parsedModelData = {
           vertices: parsed.vertices,
-          faces: parsed.faces
+          faces: parsed.faces,
+          faceColors: parsed.faceColors
         };
-        loadModelToViewer(parsed.vertices, parsed.faces);
+        loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
         initColorPicker();
       } catch (err) {
         console.error('Error parsing 3MF:', err);

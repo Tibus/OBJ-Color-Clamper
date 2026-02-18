@@ -84,14 +84,12 @@ function animate() {
   }
 }
 
-function loadModelToViewer(vertices, faces) {
+function loadModelToViewer(vertices, faces, faceColors) {
   if (!viewer3D.scene) return;
 
   // Store for raycasting
   viewer3D.vertices = vertices;
   viewer3D.faces = faces;
-
-  // console.log("vertices, faces", vertices, faces);
 
   // Remove existing mesh
   if (viewer3D.mesh) {
@@ -108,9 +106,12 @@ function loadModelToViewer(vertices, faces) {
   const positions = [];
   const colors = [];
 
-  for (const face of faces) {
+  for (let fIdx = 0; fIdx < faces.length; fIdx++) {
+    const face = faces[fIdx];
     // Support both formats: face.vertices (from parser) or face as array
     const faceIndices = face.vertices || face;
+    // Use per-face color if available (3MF), otherwise fall back to vertex colors
+    const fColor = faceColors ? faceColors[fIdx] : null;
 
     // Fan triangulation for faces with more than 3 vertices
     for (let i = 1; i < faceIndices.length - 1; i++) {
@@ -127,14 +128,20 @@ function loadModelToViewer(vertices, faces) {
       positions.push(v1.x, v1.y, v1.z);
       positions.push(v2.x, v2.y, v2.z);
 
-      // Colors
-      const c0 = v0.color || new Color(0.5, 0.5, 0.5);
-      const c1 = v1.color || new Color(0.5, 0.5, 0.5);
-      const c2 = v2.color || new Color(0.5, 0.5, 0.5);
+      // Colors - use per-face color when available for accurate 3MF display
+      if (fColor) {
+        colors.push(fColor.r, fColor.g, fColor.b);
+        colors.push(fColor.r, fColor.g, fColor.b);
+        colors.push(fColor.r, fColor.g, fColor.b);
+      } else {
+        const c0 = v0.color || new Color(0.5, 0.5, 0.5);
+        const c1 = v1.color || new Color(0.5, 0.5, 0.5);
+        const c2 = v2.color || new Color(0.5, 0.5, 0.5);
 
-      colors.push(c0.r, c0.g, c0.b);
-      colors.push(c1.r, c1.g, c1.b);
-      colors.push(c2.r, c2.g, c2.b);
+        colors.push(c0.r, c0.g, c0.b);
+        colors.push(c1.r, c1.g, c1.b);
+        colors.push(c2.r, c2.g, c2.b);
+      }
     }
   }
 
