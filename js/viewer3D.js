@@ -273,6 +273,10 @@ function renderViewerPipeline(background) {
   const scene = viewer3D.scene;
   const camera = viewer3D.camera;
 
+  // Temporarily set scene background (null = transparent for PNG export)
+  const savedBg = scene.background;
+  scene.background = background;
+
   // Step 1: Render scene to beautyRT (with depth) — hide ground so AO only affects mesh
   if (viewer3D.groundPlane) viewer3D.groundPlane.visible = false;
   r.setRenderTarget(viewer3D.beautyRT);
@@ -308,8 +312,7 @@ function renderViewerPipeline(background) {
   // Step 4: Ground plane overlay with shadow (no AO, correct depth occlusion)
   if (viewer3D.groundPlane && viewer3D.mesh) {
     viewer3D.groundPlane.visible = true;
-    const savedBg = scene.background;
-    scene.background = null;
+    scene.background = null; // No background for overlay pass
     r.autoClear = false;
     r.shadowMap.autoUpdate = false;
 
@@ -327,8 +330,10 @@ function renderViewerPipeline(background) {
     viewer3D.mesh.visible = true;
     r.autoClear = true;
     r.shadowMap.autoUpdate = true;
-    scene.background = savedBg;
   }
+
+  // Restore scene background
+  scene.background = savedBg;
 }
 
 function loadModelToViewer(vertices, faces, faceColors) {
