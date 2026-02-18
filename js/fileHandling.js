@@ -62,9 +62,11 @@ function handleFile(file) {
   clearResultViewer();
   hideTexturePreview();
 
-  // Hide preview export button
+  // Hide preview export buttons
   const exportPreviewBtn = document.getElementById('exportPreviewObjBtn');
   if (exportPreviewBtn) exportPreviewBtn.style.display = 'none';
+  const exportPreviewPngBtn = document.getElementById('exportPreviewPngBtn');
+  if (exportPreviewPngBtn) exportPreviewPngBtn.style.display = 'none';
 
   // Reset processed state
   processedOBJ = null;
@@ -194,19 +196,28 @@ function handleFile(file) {
         loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
         initColorPicker();
 
-        // Show OBJ export button if the model has vertex colors
+        // Show export buttons if the model has vertex colors
         const hasColors = parsed.vertices.some(v => v.color && v.color.name !== 'default');
+        const baseName = file.name.replace(/\.3mf$/i, '');
         if (hasColors) {
-          const btn = document.getElementById('exportPreviewObjBtn');
-          if (btn) {
-            btn.style.display = 'flex';
-            btn.onclick = () => {
+          const objBtn = document.getElementById('exportPreviewObjBtn');
+          if (objBtn) {
+            objBtn.style.display = 'flex';
+            objBtn.onclick = () => {
               const objContent = generateOBJFromData(parsed.vertices, parsed.faces);
               const blob = new Blob([objContent], { type: 'text/plain' });
-              const baseName = file.name.replace(/\.3mf$/i, '');
               downloadBlob(blob, `${baseName}.obj`);
             };
           }
+        }
+
+        // Always show PNG export for 3MF
+        const pngBtn = document.getElementById('exportPreviewPngBtn');
+        if (pngBtn) {
+          pngBtn.style.display = 'flex';
+          pngBtn.onclick = () => {
+            exportViewerPNG(baseName);
+          };
         }
       } catch (err) {
         console.error('Error parsing 3MF:', err);

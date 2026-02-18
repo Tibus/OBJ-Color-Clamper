@@ -11,7 +11,9 @@ let viewer3D = {
   container: null,
   animationId: null,
   vertices: null,
-  faces: null
+  faces: null,
+  composer: null,
+  ssaoPass: null
 };
 
 function initViewer3D(containerId) {
@@ -25,7 +27,7 @@ function initViewer3D(containerId) {
 
   // Create scene
   viewer3D.scene = new THREE.Scene();
-  viewer3D.scene.background = new THREE.Color(0x1a1a2e);
+  viewer3D.scene.background = new THREE.Color(0xffffff);
 
   // Create camera
   const width = container.clientWidth || 400;
@@ -33,10 +35,12 @@ function initViewer3D(containerId) {
   viewer3D.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
   viewer3D.camera.position.set(0, 0, 5);
 
-  // Create renderer
-  viewer3D.renderer = new THREE.WebGLRenderer({ antialias: true });
+  // Create renderer (preserveDrawingBuffer for PNG export)
+  viewer3D.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
   viewer3D.renderer.setSize(width, height);
   viewer3D.renderer.setPixelRatio(window.devicePixelRatio);
+  viewer3D.renderer.shadowMap.enabled = true;
+  viewer3D.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(viewer3D.renderer.domElement);
 
   // Add OrbitControls
@@ -45,12 +49,40 @@ function initViewer3D(containerId) {
   viewer3D.controls.dampingFactor = 0.05;
 
   // Add lights
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
   viewer3D.scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(5, 5, 5);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  directionalLight.position.set(5, 10, 7);
+  directionalLight.castShadow = true;
+  directionalLight.shadow.mapSize.width = 512;
+  directionalLight.shadow.mapSize.height = 512;
+  directionalLight.shadow.camera.near = 0.1;
+  directionalLight.shadow.camera.far = 200;
+  directionalLight.shadow.camera.left = -20;
+  directionalLight.shadow.camera.right = 20;
+  directionalLight.shadow.camera.top = 20;
+  directionalLight.shadow.camera.bottom = -20;
+  directionalLight.shadow.radius = 20;
+  directionalLight.shadow.bias = -0.0001;
   viewer3D.scene.add(directionalLight);
+  viewer3D.directionalLight = directionalLight;
+
+  // SSAO post-processing
+  viewer3D.composer = new THREE.EffectComposer(viewer3D.renderer);
+  const renderPass = new THREE.RenderPass(viewer3D.scene, viewer3D.camera);
+  viewer3D.composer.addPass(renderPass);
+
+  viewer3D.ssaoPass = new THREE.SSAOPass(viewer3D.scene, viewer3D.camera, width * 2, height * 2);
+  viewer3D.ssaoPass.kernelRadius = 10;
+  viewer3D.ssaoPass.minDistance = 0.001;
+  viewer3D.ssaoPass.maxDistance = 0.04;
+  viewer3D.ssaoPass.output = THREE.SSAOPass.OUTPUT.SSAO;
+  viewer3D.composer.addPass(viewer3D.ssaoPass);
+
+  viewer3D.fxaaPass = new THREE.ShaderPass(THREE.FXAAShader);
+  viewer3D.fxaaPass.uniforms['resolution'].value.set(1 / (width * 2), 1 / (height * 2));
+  viewer3D.composer.addPass(viewer3D.fxaaPass);
 
   // Handle resize
   window.addEventListener('resize', onViewerResize);
@@ -70,6 +102,9 @@ function onViewerResize() {
   viewer3D.camera.aspect = width / height;
   viewer3D.camera.updateProjectionMatrix();
   viewer3D.renderer.setSize(width, height);
+  if (viewer3D.composer) viewer3D.composer.setSize(width * 2, height * 2);
+  if (viewer3D.ssaoPass) viewer3D.ssaoPass.setSize(width * 2, height * 2);
+  if (viewer3D.fxaaPass) viewer3D.fxaaPass.uniforms['resolution'].value.set(1 / (width * 2), 1 / (height * 2));
 }
 
 function animate() {
@@ -79,7 +114,38 @@ function animate() {
     viewer3D.controls.update();
   }
 
-  if (viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
+  if (viewer3D.composer) {
+    // Step 1: Render scene with SSAO (hide ground plane so AO only affects the mesh)
+    if (viewer3D.groundPlane) viewer3D.groundPlane.visible = false;
+    viewer3D.composer.render();
+
+    // Step 2: Composite ground plane with correct depth occlusion
+    if (viewer3D.groundPlane && viewer3D.mesh) {
+      const savedBg = viewer3D.scene.background;
+      viewer3D.scene.background = null;
+      viewer3D.renderer.autoClear = false;
+      viewer3D.renderer.shadowMap.autoUpdate = false;
+
+      // Clear depth (composer's full-screen quad overwrote it)
+      viewer3D.renderer.clearDepth();
+
+      // Re-render mesh depth only (no color) so ground plane is properly occluded
+      viewer3D.mesh.material.colorWrite = false;
+      viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+      viewer3D.mesh.material.colorWrite = true;
+
+      // Render ground plane with correct depth test
+      viewer3D.groundPlane.visible = true;
+      viewer3D.mesh.visible = false;
+      viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+
+      // Restore state
+      viewer3D.mesh.visible = true;
+      viewer3D.renderer.autoClear = true;
+      viewer3D.renderer.shadowMap.autoUpdate = true;
+      viewer3D.scene.background = savedBg;
+    }
+  } else if (viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
     viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
   }
 }
@@ -156,7 +222,51 @@ function loadModelToViewer(vertices, faces, faceColors) {
   });
 
   viewer3D.mesh = new THREE.Mesh(geometry, material);
+  viewer3D.mesh.castShadow = true;
+
+  // Rotate -90° on X to convert Z-up (3MF/STL) to Y-up (Three.js)
+  viewer3D.mesh.rotation.x = -Math.PI / 2;
+
   viewer3D.scene.add(viewer3D.mesh);
+
+  // Remove previous shadow ground
+  if (viewer3D.groundPlane) {
+    viewer3D.scene.remove(viewer3D.groundPlane);
+    viewer3D.groundPlane.geometry.dispose();
+    viewer3D.groundPlane.material.dispose();
+    viewer3D.groundPlane = null;
+  }
+
+  // Add shadow ground plane beneath the model
+  const box = new THREE.Box3().setFromObject(viewer3D.mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const groundSize = maxDim * 4;
+
+  const groundGeo = new THREE.PlaneGeometry(groundSize, groundSize);
+  const groundMat = new THREE.ShadowMaterial({ opacity: 0.12 });
+  viewer3D.groundPlane = new THREE.Mesh(groundGeo, groundMat);
+  viewer3D.groundPlane.rotation.x = -Math.PI / 2;
+  viewer3D.groundPlane.position.set(center.x, box.min.y, center.z);
+  viewer3D.groundPlane.receiveShadow = true;
+  viewer3D.groundPlane.renderOrder = 0; // Render after the mesh to ensure it appears on top
+  viewer3D.scene.add(viewer3D.groundPlane);
+
+  // Update shadow light: almost directly above for a soft contact shadow
+  if (viewer3D.directionalLight) {
+    viewer3D.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
+    viewer3D.directionalLight.target.position.copy(center);
+    viewer3D.scene.add(viewer3D.directionalLight.target);
+    // Very wide frustum + low-res shadow map = very blurry shadow
+    const s = maxDim * 3;
+    viewer3D.directionalLight.shadow.camera.left = -s;
+    viewer3D.directionalLight.shadow.camera.right = s;
+    viewer3D.directionalLight.shadow.camera.top = s;
+    viewer3D.directionalLight.shadow.camera.bottom = -s;
+    viewer3D.directionalLight.shadow.camera.far = maxDim * 10;
+    viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+  }
 
   // Auto-fit camera to bounds
   fitCameraToObject(viewer3D.mesh);
@@ -203,6 +313,12 @@ function clearViewer() {
     viewer3D.mesh.material.dispose();
     viewer3D.mesh = null;
   }
+  if (viewer3D.groundPlane && viewer3D.scene) {
+    viewer3D.scene.remove(viewer3D.groundPlane);
+    viewer3D.groundPlane.geometry.dispose();
+    viewer3D.groundPlane.material.dispose();
+    viewer3D.groundPlane = null;
+  }
   viewer3D.vertices = null;
   viewer3D.faces = null;
 }
@@ -224,6 +340,51 @@ function getViewerRenderer() {
 
 function getViewerCamera() {
   return viewer3D.camera;
+}
+
+function exportViewerPNG(baseName) {
+  if (!viewer3D.renderer || !viewer3D.scene || !viewer3D.camera) return;
+
+  const savedBackground = viewer3D.scene.background;
+  viewer3D.scene.background = null;
+  viewer3D.renderer.setClearColor(0x000000, 0);
+
+  if (viewer3D.composer) {
+    // Full render pipeline: SSAO + depth + ground plane (same as animate)
+    if (viewer3D.groundPlane) viewer3D.groundPlane.visible = false;
+    viewer3D.composer.render();
+
+    if (viewer3D.groundPlane && viewer3D.mesh) {
+      viewer3D.renderer.autoClear = false;
+      viewer3D.renderer.shadowMap.autoUpdate = false;
+
+      viewer3D.renderer.clearDepth();
+      viewer3D.mesh.material.colorWrite = false;
+      viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+      viewer3D.mesh.material.colorWrite = true;
+
+      viewer3D.groundPlane.visible = true;
+      viewer3D.mesh.visible = false;
+      viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+
+      viewer3D.mesh.visible = true;
+      viewer3D.renderer.autoClear = true;
+      viewer3D.renderer.shadowMap.autoUpdate = true;
+    }
+  } else {
+    viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+  }
+
+  // Capture from canvas
+  const dataURL = viewer3D.renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = dataURL;
+  a.download = `${baseName}.png`;
+  a.click();
+
+  // Restore
+  viewer3D.scene.background = savedBackground;
+  viewer3D.renderer.setClearColor(0x000000, 1);
 }
 
 // ============================================================================
@@ -370,12 +531,13 @@ function loadResultToViewer(vertices, faces) {
   geometry.computeVertexNormals();
 
   // Create material with vertex colors
-  const material = new THREE.MeshLambertMaterial({
+  const material = new THREE.MeshPhysicalMaterial({
     vertexColors: true,
     side: THREE.DoubleSide
   });
 
   resultViewer3D.mesh = new THREE.Mesh(geometry, material);
+  resultViewer3D.mesh.renderOrder = 1;
   resultViewer3D.scene.add(resultViewer3D.mesh);
 
   // Auto-fit camera to bounds

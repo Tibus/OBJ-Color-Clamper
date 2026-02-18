@@ -790,29 +790,33 @@ h1 .accent {
   position: relative;
 }
 
-.btn-export-obj {
+.viewer-buttons {
   position: absolute;
   bottom: var(--space-sm);
   right: var(--space-sm);
-  padding: 6px 12px;
-  font-size: 0.8rem;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+
+.btn-viewer {
+  padding: 5px 10px;
+  font-size: 0.75rem;
   font-weight: 600;
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  background: var(--success);
+  background: rgba(0, 0, 0, 0.45);
   color: white;
   display: flex;
   align-items: center;
   gap: 4px;
-  opacity: 0.85;
+  backdrop-filter: blur(4px);
   transition: all var(--transition-base);
-  z-index: 10;
 }
 
-.btn-export-obj:hover {
-  opacity: 1;
-  filter: brightness(1.1);
+.btn-viewer:hover {
+  background: rgba(0, 0, 0, 0.7);
 }
 
 .viewer-container canvas {
