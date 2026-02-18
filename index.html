@@ -39,7 +39,15 @@
     <div class="card" id="viewerCard" style="display: none;">
       <h2>Preview</h2>
       <p class="viewer-instructions">Click on the model to pick colors</p>
-      <div id="viewer3DContainer" class="viewer-container"></div>
+      <div class="viewer-wrapper">
+        <div id="viewer3DContainer" class="viewer-container"></div>
+        <button class="btn-export-obj" id="exportPreviewObjBtn" style="display: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          OBJ
+        </button>
+      </div>
     </div>
 
     <!-- Picked Colors -->

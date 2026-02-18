@@ -62,6 +62,10 @@ function handleFile(file) {
   clearResultViewer();
   hideTexturePreview();
 
+  // Hide preview export button
+  const exportPreviewBtn = document.getElementById('exportPreviewObjBtn');
+  if (exportPreviewBtn) exportPreviewBtn.style.display = 'none';
+
   // Reset processed state
   processedOBJ = null;
   processedData = null;
@@ -189,6 +193,21 @@ function handleFile(file) {
         };
         loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
         initColorPicker();
+
+        // Show OBJ export button if the model has vertex colors
+        const hasColors = parsed.vertices.some(v => v.color && v.color.name !== 'default');
+        if (hasColors) {
+          const btn = document.getElementById('exportPreviewObjBtn');
+          if (btn) {
+            btn.style.display = 'flex';
+            btn.onclick = () => {
+              const objContent = generateOBJFromData(parsed.vertices, parsed.faces);
+              const blob = new Blob([objContent], { type: 'text/plain' });
+              const baseName = file.name.replace(/\.3mf$/i, '');
+              downloadBlob(blob, `${baseName}.obj`);
+            };
+          }
+        }
       } catch (err) {
         console.error('Error parsing 3MF:', err);
         elements.fileStats.textContent = 'Error reading 3MF file: ' + err.message;
