@@ -15,7 +15,7 @@
  */
 function decodePaintColorIndex(hexStr) {
   const value = parseInt(hexStr, 16);
-  if (isNaN(value) || value <= 0) return -1;
+  if (isNaN(value) || value <= 0 || value == Infinity) return -1;
 
   // Static reverse lookup for known whole-face paint values
   // These match the mmu encoding used by Bambu Studio / PrusaSlicer / our export
