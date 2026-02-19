@@ -45,7 +45,7 @@ function initViewer3D(containerId) {
   viewer3D.camera.position.set(0, 0, 5);
 
   // Create renderer (preserveDrawingBuffer for PNG export)
-  viewer3D.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true, logarithmicDepthBuffer: true });
+  viewer3D.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: false, logarithmicDepthBuffer: true });
   viewer3D.renderer.setSize(width, height);
   viewer3D.renderer.setPixelRatio(window.devicePixelRatio);
   viewer3D.renderer.shadowMap.enabled = true;
@@ -219,6 +219,44 @@ function initViewer3D(containerId) {
   });
   viewer3D.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
 
+  // Shadow render target (for PNG export compositing)
+  viewer3D.shadowRT = new THREE.WebGLRenderTarget(ssW, ssH, {
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+  });
+
+  // Composite material: merges model + shadow for correct transparent PNG
+  viewer3D.compositeMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      tModel: { value: null },
+      tShadow: { value: null }
+    },
+    vertexShader: [
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vUv = uv;',
+      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'uniform sampler2D tModel;',
+      'uniform sampler2D tShadow;',
+      'varying vec2 vUv;',
+      'void main() {',
+      '  vec4 model = texture2D(tModel, vUv);',
+      '  vec4 shadow = texture2D(tShadow, vUv);',
+      '  float s = shadow.a;',
+      '  vec3 rgb = model.rgb * (1.0 - s);',
+      '  float a = model.a + s * (1.0 - model.a);' +
+      '  if(model.a < 0.01) {' +
+      '    rgb = vec3(0.0);' +
+      '  }' +
+      '  gl_FragColor = vec4(rgb, a);',
+      '}'
+    ].join('\n'),
+    depthWrite: false,
+    depthTest: false
+  });
+
   // AO toggle button
   viewer3D.aoEnabled = true;
   const toggleAoBtn = document.getElementById('toggleAoBtn');
@@ -261,6 +299,7 @@ function onViewerResize() {
   const ssW = width * 2, ssH = height * 2;
   if (viewer3D.beautyRT) viewer3D.beautyRT.setSize(ssW, ssH);
   if (viewer3D.aoRT) viewer3D.aoRT.setSize(ssW, ssH);
+  if (viewer3D.shadowRT) viewer3D.shadowRT.setSize(ssW, ssH);
   if (viewer3D.aoMaterial) viewer3D.aoMaterial.uniforms.resolution.value.set(ssW, ssH);
   if (viewer3D.fxaaMaterial) viewer3D.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
 }
@@ -291,7 +330,7 @@ function renderViewerPipeline(background) {
   // Step 1: Render scene to beautyRT (with depth) — hide ground so AO only affects mesh
   if (viewer3D.groundPlane) viewer3D.groundPlane.visible = false;
   r.setRenderTarget(viewer3D.beautyRT);
-  r.setClearColor(background || 0x000000, background ? 1 : 0);
+  r.setClearColor(background || 0xFFFFFF, background ? 1 : 0);
   r.clear();
   r.render(scene, camera);
 
@@ -311,36 +350,75 @@ function renderViewerPipeline(background) {
     // Just use beautyRT directly in FXAA step
   }
 
-  // Step 3: FXAA pass → screen
+  // Step 3: FXAA pass
   const source = viewer3D.aoEnabled ? viewer3D.aoRT : viewer3D.beautyRT;
   viewer3D.fxaaMaterial.uniforms['tDiffuse'].value = source.texture;
   viewer3D.fsQuad.material = viewer3D.fxaaMaterial;
-  r.setRenderTarget(null);
-  r.setClearColor(0x000000, background ? 1 : 0);
-  r.clear();
-  r.render(viewer3D.fsScene, viewer3D.fsCamera);
 
-  // Step 4: Ground plane overlay with shadow (no AO, correct depth occlusion)
-  if (viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
+  if (!background && viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
+    // PNG export path: render model to RT, shadow to RT, then composite
+    // Step 3a: FXAA → modelRT (write to the RT that FXAA is NOT reading from)
+    const modelRT = viewer3D.aoEnabled ? viewer3D.beautyRT : viewer3D.aoRT;
+    r.setRenderTarget(modelRT);
+    r.setClearColor(0x000000, 0);
+    r.clear();
+    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+
+    // Step 4a: Shadow → shadowRT (black clear for correct black-transparent shadow)
     viewer3D.groundPlane.visible = true;
-    scene.background = null; // No background for overlay pass
+    scene.background = null;
+    r.setRenderTarget(viewer3D.shadowRT);
+    r.setClearColor(0x000000, 0);
+    r.clear();
     r.autoClear = false;
     r.shadowMap.autoUpdate = false;
 
-    // Clear depth and re-render mesh depth only (no color) for occlusion
-    r.clearDepth();
+    // Depth pass: mesh only (for occlusion)
     viewer3D.mesh.material.colorWrite = false;
     r.render(scene, camera);
     viewer3D.mesh.material.colorWrite = true;
 
-    // Render ground plane with correct depth test
+    // Shadow pass: ground only
     viewer3D.mesh.visible = false;
     r.render(scene, camera);
-
-    // Restore
     viewer3D.mesh.visible = true;
     r.autoClear = true;
     r.shadowMap.autoUpdate = true;
+
+    // Step 5: Composite model + shadow → screen
+    viewer3D.compositeMaterial.uniforms.tModel.value = modelRT.texture;
+    viewer3D.compositeMaterial.uniforms.tShadow.value = viewer3D.shadowRT.texture;
+    viewer3D.fsQuad.material = viewer3D.compositeMaterial;
+    r.setRenderTarget(null);
+    r.setClearColor(0x000000, 0);
+    r.clear();
+    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+  } else {
+    // Normal screen path
+    r.setRenderTarget(null);
+    r.setClearColor(background || 0xFFFFFF, background ? 1 : 0);
+    r.clear();
+    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+
+    // Step 4: Ground plane overlay with shadow (direct blending on screen)
+    if (viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
+      viewer3D.groundPlane.visible = true;
+      scene.background = null;
+      r.autoClear = false;
+      r.shadowMap.autoUpdate = false;
+
+      r.clearDepth();
+      viewer3D.mesh.material.colorWrite = false;
+      r.render(scene, camera);
+      viewer3D.mesh.material.colorWrite = true;
+
+      viewer3D.mesh.visible = false;
+      r.render(scene, camera);
+
+      viewer3D.mesh.visible = true;
+      r.autoClear = true;
+      r.shadowMap.autoUpdate = true;
+    }
   }
 
   // Restore scene background
