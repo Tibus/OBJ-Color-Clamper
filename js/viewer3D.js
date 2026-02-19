@@ -21,7 +21,8 @@ let viewer3D = {
   fsScene: null,
   fsCamera: null,
   aoEnabled: true,
-  aoDebug: false
+  aoDebug: false,
+  shadowEnabled: true
 };
 
 function initViewer3D(containerId) {
@@ -228,6 +229,16 @@ function initViewer3D(containerId) {
     });
   }
 
+  // Shadow toggle button
+  viewer3D.shadowEnabled = true;
+  const toggleShadowBtn = document.getElementById('toggleShadowBtn');
+  if (toggleShadowBtn) {
+    toggleShadowBtn.addEventListener('click', () => {
+      viewer3D.shadowEnabled = !viewer3D.shadowEnabled;
+      toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
+    });
+  }
+
   // Handle resize
   window.addEventListener('resize', onViewerResize);
 
@@ -310,7 +321,7 @@ function renderViewerPipeline(background) {
   r.render(viewer3D.fsScene, viewer3D.fsCamera);
 
   // Step 4: Ground plane overlay with shadow (no AO, correct depth occlusion)
-  if (viewer3D.groundPlane && viewer3D.mesh) {
+  if (viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
     viewer3D.groundPlane.visible = true;
     scene.background = null; // No background for overlay pass
     r.autoClear = false;
