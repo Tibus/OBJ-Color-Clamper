@@ -328,6 +328,24 @@ function initViewer3D(containerId) {
     });
   }
 
+  // Rotation buttons
+  const halfPi = Math.PI / 2;
+  document.getElementById('rotateX')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.x += halfPi;
+    updateGroundAndShadow();
+  });
+  document.getElementById('rotateY')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.y += halfPi;
+    updateGroundAndShadow();
+  });
+  document.getElementById('rotateZ')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.z += halfPi;
+    updateGroundAndShadow();
+  });
+
   // Handle resize
   window.addEventListener('resize', onViewerResize);
 
@@ -615,6 +633,48 @@ function loadModelToViewer(vertices, faces, faceColors) {
   requestAnimationFrame(() => {
     onViewerResize();
   });
+}
+
+function updateGroundAndShadow() {
+  if (!viewer3D.mesh || !viewer3D.groundPlane) return;
+
+  const box = new THREE.Box3().setFromObject(viewer3D.mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+
+  // Reposition ground plane at the bottom of the rotated model
+  viewer3D.groundPlane.position.set(center.x, box.min.y, center.z);
+  const groundSize = maxDim * 4;
+  viewer3D.groundPlane.geometry.dispose();
+  viewer3D.groundPlane.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
+
+  // Update shadow light
+  if (viewer3D.directionalLight) {
+    viewer3D.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
+    viewer3D.directionalLight.target.position.copy(center);
+
+    viewer3D.shadowBaseSpread = maxDim;
+    const spreadSlider = document.getElementById('shadowSpreadSlider');
+    const spreadScale = spreadSlider ? parseFloat(spreadSlider.value) / 100 : 1.0;
+    const s = maxDim * 6 * spreadScale;
+    viewer3D.directionalLight.shadow.camera.left = -s;
+    viewer3D.directionalLight.shadow.camera.right = s;
+    viewer3D.directionalLight.shadow.camera.top = s;
+    viewer3D.directionalLight.shadow.camera.bottom = -s;
+    viewer3D.directionalLight.shadow.camera.far = maxDim * 10;
+    viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+  }
+
+  // Recenter camera & controls on new bounds
+  const fov = viewer3D.camera.fov * (Math.PI / 180);
+  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+  viewer3D.camera.far = cameraZ * 20;
+  viewer3D.camera.updateProjectionMatrix();
+  viewer3D.camera.position.set(center.x, center.y, center.z + cameraZ);
+  viewer3D.camera.lookAt(center);
+  viewer3D.controls.target.copy(center);
+  viewer3D.controls.update();
 }
 
 function fitCameraToObject(object) {

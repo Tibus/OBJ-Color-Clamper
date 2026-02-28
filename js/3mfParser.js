@@ -354,8 +354,6 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
 
   // Get global default color
   let globalDefaultColor = colorMap.has(0) ? colorMap.get(0) : null;
-  console.log("colorMap", colorMap);
-
   for (let objIdx = 0; objIdx < objects.length; objIdx++) {
     const obj = objects[objIdx];
     const objId = obj.getAttribute('id');

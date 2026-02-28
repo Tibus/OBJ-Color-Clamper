@@ -918,6 +918,31 @@ h1 .accent {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
+.rotation-buttons {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  gap: 6px;
+}
+
+.btn-rotate {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-rotate:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
 /* ============================================================================
    Picked Palette
    ============================================================================ */
