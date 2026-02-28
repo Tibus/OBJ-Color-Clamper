@@ -833,6 +833,91 @@ h1 .accent {
   height: 100% !important;
 }
 
+/* Viewer Settings Panel */
+.viewer-settings {
+  display: none;
+  position: absolute;
+  bottom: 40px;
+  right: var(--space-sm);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  z-index: 10;
+  min-width: 220px;
+}
+
+.viewer-settings.show {
+  display: block;
+}
+
+.viewer-setting-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 2px var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-sm);
+}
+
+.viewer-setting-row:last-child {
+  margin-bottom: 0;
+}
+
+.viewer-setting-row label {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.viewer-setting-row .setting-value {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 32px;
+}
+
+.viewer-setting-row input[type="range"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.viewer-setting-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.viewer-setting-row input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
 /* ============================================================================
    Picked Palette
    ============================================================================ */

@@ -277,6 +277,57 @@ function initViewer3D(containerId) {
     });
   }
 
+  // Settings panel toggle
+  const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
+  const settingsPanel = document.getElementById('viewerSettings');
+  if (toggleSettingsBtn && settingsPanel) {
+    toggleSettingsBtn.addEventListener('click', () => {
+      settingsPanel.classList.toggle('show');
+      toggleSettingsBtn.classList.toggle('active', settingsPanel.classList.contains('show'));
+    });
+  }
+
+  // Settings sliders
+  const aoStrengthSlider = document.getElementById('aoStrengthSlider');
+  const aoStrengthValue = document.getElementById('aoStrengthValue');
+  if (aoStrengthSlider) {
+    aoStrengthSlider.addEventListener('input', () => {
+      const val = parseFloat(aoStrengthSlider.value);
+      viewer3D.aoMaterial.uniforms.aoStrength.value = val;
+      aoStrengthValue.textContent = val.toFixed(2);
+    });
+  }
+
+  const shadowOpacitySlider = document.getElementById('shadowOpacitySlider');
+  const shadowOpacityValue = document.getElementById('shadowOpacityValue');
+  if (shadowOpacitySlider) {
+    shadowOpacitySlider.addEventListener('input', () => {
+      const val = parseFloat(shadowOpacitySlider.value);
+      if (viewer3D.groundPlane) {
+        viewer3D.groundPlane.material.opacity = val;
+      }
+      shadowOpacityValue.textContent = val.toFixed(2);
+    });
+  }
+
+  const shadowSpreadSlider = document.getElementById('shadowSpreadSlider');
+  const shadowSpreadValue = document.getElementById('shadowSpreadValue');
+  if (shadowSpreadSlider) {
+    shadowSpreadSlider.addEventListener('input', () => {
+      let val = parseFloat(shadowSpreadSlider.value);
+      val = Math.max(val, 10);
+      if (viewer3D.directionalLight && viewer3D.shadowBaseSpread) {
+        const s = viewer3D.shadowBaseSpread * 6 * (val / 100);
+        viewer3D.directionalLight.shadow.camera.left = -s;
+        viewer3D.directionalLight.shadow.camera.right = s;
+        viewer3D.directionalLight.shadow.camera.top = s;
+        viewer3D.directionalLight.shadow.camera.bottom = -s;
+        viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+      }
+      shadowSpreadValue.textContent = val;
+    });
+  }
+
   // Handle resize
   window.addEventListener('resize', onViewerResize);
 
@@ -534,7 +585,10 @@ function loadModelToViewer(vertices, faces, faceColors) {
     viewer3D.directionalLight.target.position.copy(center);
     viewer3D.scene.add(viewer3D.directionalLight.target);
     // Very wide frustum + low-res shadow map = very blurry shadow
-    const s = maxDim * 6;
+    viewer3D.shadowBaseSpread = maxDim;
+    const spreadSlider = document.getElementById('shadowSpreadSlider');
+    const spreadScale = spreadSlider ? parseFloat(spreadSlider.value) / 100 : 1.0;
+    const s = maxDim * 6 * spreadScale;
     viewer3D.directionalLight.shadow.camera.left = -s;
     viewer3D.directionalLight.shadow.camera.right = s;
     viewer3D.directionalLight.shadow.camera.top = s;
