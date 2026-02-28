@@ -75,7 +75,8 @@ function extractColorFromIntersection(intersection) {
   if (!mesh) return null;
 
   const geometry = mesh.geometry;
-  const colorAttribute = geometry.getAttribute('color');
+  // Use trueColor (original values without viewer min-lift) for accurate picking
+  const colorAttribute = geometry.getAttribute('trueColor') || geometry.getAttribute('color');
 
   if (!colorAttribute) return null;
 

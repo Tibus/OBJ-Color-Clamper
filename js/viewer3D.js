@@ -515,6 +515,7 @@ function loadModelToViewer(vertices, faces, faceColors) {
   // Flatten vertices for triangles (each face becomes triangles)
   const positions = [];
   const colors = [];
+  const trueColors = []; // Original colors (without min lift) for accurate picking
 
   for (let fIdx = 0; fIdx < faces.length; fIdx++) {
     const face = faces[fIdx];
@@ -539,24 +540,33 @@ function loadModelToViewer(vertices, faces, faceColors) {
       positions.push(v2.x, v2.y, v2.z);
 
       // Colors - use per-face color when available for accurate 3MF display
+      // Lift pure black to dark gray so lighting/AO can still produce visible shading
+      const MIN_C = 0.12;
       if (fColor) {
-        colors.push(fColor.r, fColor.g, fColor.b);
-        colors.push(fColor.r, fColor.g, fColor.b);
-        colors.push(fColor.r, fColor.g, fColor.b);
+        trueColors.push(fColor.r, fColor.g, fColor.b);
+        trueColors.push(fColor.r, fColor.g, fColor.b);
+        trueColors.push(fColor.r, fColor.g, fColor.b);
+        colors.push(Math.max(fColor.r, MIN_C), Math.max(fColor.g, MIN_C), Math.max(fColor.b, MIN_C));
+        colors.push(Math.max(fColor.r, MIN_C), Math.max(fColor.g, MIN_C), Math.max(fColor.b, MIN_C));
+        colors.push(Math.max(fColor.r, MIN_C), Math.max(fColor.g, MIN_C), Math.max(fColor.b, MIN_C));
       } else {
         const c0 = v0.color || new Color(0.5, 0.5, 0.5);
         const c1 = v1.color || new Color(0.5, 0.5, 0.5);
         const c2 = v2.color || new Color(0.5, 0.5, 0.5);
 
-        colors.push(c0.r, c0.g, c0.b);
-        colors.push(c1.r, c1.g, c1.b);
-        colors.push(c2.r, c2.g, c2.b);
+        trueColors.push(c0.r, c0.g, c0.b);
+        trueColors.push(c1.r, c1.g, c1.b);
+        trueColors.push(c2.r, c2.g, c2.b);
+        colors.push(Math.max(c0.r, MIN_C), Math.max(c0.g, MIN_C), Math.max(c0.b, MIN_C));
+        colors.push(Math.max(c1.r, MIN_C), Math.max(c1.g, MIN_C), Math.max(c1.b, MIN_C));
+        colors.push(Math.max(c2.r, MIN_C), Math.max(c2.g, MIN_C), Math.max(c2.b, MIN_C));
       }
     }
   }
 
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('trueColor', new THREE.Float32BufferAttribute(trueColors, 3));
   geometry.computeVertexNormals();
 
   // Create material with vertex colors
