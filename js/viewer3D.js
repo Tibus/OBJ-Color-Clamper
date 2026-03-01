@@ -2,6 +2,67 @@
 // 3D Viewer with Three.js
 // ============================================================================
 
+const CAMERA_STORAGE_KEY = 'objColorClamper_cameraState';
+const VIEWER_SETTINGS_KEY = 'objColorClamper_viewerSettings';
+let cameraFitDistance = null; // distance computed by fitCameraToObject
+let cameraSaveTimer = null;
+let settingsSaveTimer = null;
+
+function saveCameraState() {
+  if (!viewer3D.controls || !viewer3D.camera || !cameraFitDistance) return;
+  const azimuth = viewer3D.controls.getAzimuthalAngle();
+  const polar = viewer3D.controls.getPolarAngle();
+  const dist = viewer3D.camera.position.distanceTo(viewer3D.controls.target);
+  const distRatio = dist / cameraFitDistance;
+  try {
+    localStorage.setItem(CAMERA_STORAGE_KEY, JSON.stringify({ azimuth, polar, distRatio }));
+  } catch { /* ignore */ }
+}
+
+function saveCameraStateDebounced() {
+  clearTimeout(cameraSaveTimer);
+  cameraSaveTimer = setTimeout(saveCameraState, 300);
+}
+
+function loadCameraState() {
+  try {
+    const stored = localStorage.getItem(CAMERA_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveViewerSettings() {
+  const aoSlider = document.getElementById('aoStrengthSlider');
+  const opacitySlider = document.getElementById('shadowOpacitySlider');
+  const spreadSlider = document.getElementById('shadowSpreadSlider');
+  const settings = {
+    aoEnabled: viewer3D.aoEnabled,
+    shadowEnabled: viewer3D.shadowEnabled,
+    aoStrength: aoSlider ? parseFloat(aoSlider.value) : 0.7,
+    shadowOpacity: opacitySlider ? parseFloat(opacitySlider.value) : 0.12,
+    shadowSpread: spreadSlider ? parseFloat(spreadSlider.value) : 100,
+  };
+  try {
+    localStorage.setItem(VIEWER_SETTINGS_KEY, JSON.stringify(settings));
+  } catch { /* ignore */ }
+}
+
+function saveViewerSettingsDebounced() {
+  clearTimeout(settingsSaveTimer);
+  settingsSaveTimer = setTimeout(saveViewerSettings, 300);
+}
+
+function loadViewerSettings() {
+  try {
+    const stored = localStorage.getItem(VIEWER_SETTINGS_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
 let viewer3D = {
   scene: null,
   camera: null,
@@ -56,6 +117,7 @@ function initViewer3D(containerId) {
   viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
   viewer3D.controls.enableDamping = true;
   viewer3D.controls.dampingFactor = 0.05;
+  viewer3D.controls.addEventListener('change', saveCameraStateDebounced);
 
   // Add lights
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
@@ -257,23 +319,30 @@ function initViewer3D(containerId) {
     depthTest: false
   });
 
+  // Restore saved viewer settings
+  const savedSettings = loadViewerSettings();
+
   // AO toggle button
-  viewer3D.aoEnabled = true;
+  viewer3D.aoEnabled = savedSettings ? savedSettings.aoEnabled : true;
   const toggleAoBtn = document.getElementById('toggleAoBtn');
   if (toggleAoBtn) {
+    toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
     toggleAoBtn.addEventListener('click', () => {
       viewer3D.aoEnabled = !viewer3D.aoEnabled;
       toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
+      saveViewerSettings();
     });
   }
 
   // Shadow toggle button
-  viewer3D.shadowEnabled = true;
+  viewer3D.shadowEnabled = savedSettings ? savedSettings.shadowEnabled : true;
   const toggleShadowBtn = document.getElementById('toggleShadowBtn');
   if (toggleShadowBtn) {
+    toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
     toggleShadowBtn.addEventListener('click', () => {
       viewer3D.shadowEnabled = !viewer3D.shadowEnabled;
       toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
+      saveViewerSettings();
     });
   }
 
@@ -291,28 +360,46 @@ function initViewer3D(containerId) {
   const aoStrengthSlider = document.getElementById('aoStrengthSlider');
   const aoStrengthValue = document.getElementById('aoStrengthValue');
   if (aoStrengthSlider) {
+    if (savedSettings && savedSettings.aoStrength != null) {
+      aoStrengthSlider.value = savedSettings.aoStrength;
+      aoStrengthValue.textContent = savedSettings.aoStrength.toFixed(2);
+      viewer3D.aoMaterial.uniforms.aoStrength.value = savedSettings.aoStrength;
+    }
     aoStrengthSlider.addEventListener('input', () => {
       const val = parseFloat(aoStrengthSlider.value);
       viewer3D.aoMaterial.uniforms.aoStrength.value = val;
       aoStrengthValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
     });
   }
 
   const shadowOpacitySlider = document.getElementById('shadowOpacitySlider');
   const shadowOpacityValue = document.getElementById('shadowOpacityValue');
   if (shadowOpacitySlider) {
+    if (savedSettings && savedSettings.shadowOpacity != null) {
+      shadowOpacitySlider.value = savedSettings.shadowOpacity;
+      shadowOpacityValue.textContent = savedSettings.shadowOpacity.toFixed(2);
+      if (viewer3D.groundPlane) {
+        viewer3D.groundPlane.material.opacity = savedSettings.shadowOpacity;
+      }
+    }
     shadowOpacitySlider.addEventListener('input', () => {
       const val = parseFloat(shadowOpacitySlider.value);
       if (viewer3D.groundPlane) {
         viewer3D.groundPlane.material.opacity = val;
       }
       shadowOpacityValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
     });
   }
 
   const shadowSpreadSlider = document.getElementById('shadowSpreadSlider');
   const shadowSpreadValue = document.getElementById('shadowSpreadValue');
   if (shadowSpreadSlider) {
+    if (savedSettings && savedSettings.shadowSpread != null) {
+      shadowSpreadSlider.value = savedSettings.shadowSpread;
+      shadowSpreadValue.textContent = savedSettings.shadowSpread;
+    }
     shadowSpreadSlider.addEventListener('input', () => {
       let val = parseFloat(shadowSpreadSlider.value);
       val = Math.max(val, 10);
@@ -325,6 +412,7 @@ function initViewer3D(containerId) {
         viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
       }
       shadowSpreadValue.textContent = val;
+      saveViewerSettingsDebounced();
     });
   }
 
@@ -599,7 +687,10 @@ function loadModelToViewer(vertices, faces, faceColors) {
   const groundSize = maxDim * 4;
 
   const groundGeo = new THREE.PlaneGeometry(groundSize, groundSize);
-  const groundMat = new THREE.ShadowMaterial({ opacity: 0.12 });
+  const savedOpacity = loadViewerSettings();
+  const groundMat = new THREE.ShadowMaterial({
+    opacity: (savedOpacity && savedOpacity.shadowOpacity != null) ? savedOpacity.shadowOpacity : 0.12,
+  });
   viewer3D.groundPlane = new THREE.Mesh(groundGeo, groundMat);
   viewer3D.groundPlane.rotation.x = -Math.PI / 2;
   viewer3D.groundPlane.position.set(center.x, box.min.y, center.z);
@@ -676,14 +767,18 @@ function updateGroundAndShadow() {
     viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
   }
 
-  // Recenter camera & controls on new bounds
+  // Recenter camera & controls on new bounds, preserving current viewing direction
   const fov = viewer3D.camera.fov * (Math.PI / 180);
-  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
-  viewer3D.camera.far = cameraZ * 20;
+  let fitDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+  cameraFitDistance = fitDist;
+  viewer3D.camera.far = fitDist * 20;
   viewer3D.camera.updateProjectionMatrix();
-  viewer3D.camera.position.set(center.x, center.y, center.z + cameraZ);
-  viewer3D.camera.lookAt(center);
+
+  // Keep current camera direction, just recenter on new bounds
+  const offset = viewer3D.camera.position.clone().sub(viewer3D.controls.target).normalize().multiplyScalar(fitDist);
   viewer3D.controls.target.copy(center);
+  viewer3D.camera.position.copy(center).add(offset);
+  viewer3D.camera.lookAt(center);
   viewer3D.controls.update();
 }
 
@@ -694,19 +789,31 @@ function fitCameraToObject(object) {
 
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = viewer3D.camera.fov * (Math.PI / 180);
-  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+  let fitDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
 
-  cameraZ *= 1.5; // Add some padding
+  cameraFitDistance = fitDist;
 
-  // Tighten near/far planes for better depth precision (avoids z-fighting without logarithmic depth)
-  // viewer3D.camera.near = cameraZ * 0.01;
-  viewer3D.camera.far = cameraZ * 20;
+  viewer3D.camera.far = fitDist * 20;
   viewer3D.camera.updateProjectionMatrix();
 
-  viewer3D.camera.position.set(center.x, center.y, center.z + cameraZ);
-  viewer3D.camera.lookAt(center);
-
   viewer3D.controls.target.copy(center);
+
+  // Restore saved camera orientation, or use default (front view)
+  const saved = loadCameraState();
+  if (saved) {
+    const dist = fitDist * (saved.distRatio || 1);
+    const phi = saved.polar;   // polar angle (from Y-up)
+    const theta = saved.azimuth; // azimuthal angle (around Y)
+    viewer3D.camera.position.set(
+      center.x + dist * Math.sin(phi) * Math.sin(theta),
+      center.y + dist * Math.cos(phi),
+      center.z + dist * Math.sin(phi) * Math.cos(theta),
+    );
+  } else {
+    viewer3D.camera.position.set(center.x, center.y, center.z + fitDist);
+  }
+
+  viewer3D.camera.lookAt(center);
   viewer3D.controls.update();
 }
 
