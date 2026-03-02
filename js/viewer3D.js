@@ -37,12 +37,20 @@ function saveViewerSettings() {
   const aoSlider = document.getElementById('aoStrengthSlider');
   const opacitySlider = document.getElementById('shadowOpacitySlider');
   const spreadSlider = document.getElementById('shadowSpreadSlider');
+  const brightnessSlider = document.getElementById('brightnessSlider');
+  const contrastSlider = document.getElementById('contrastSlider');
+  const saturationSlider = document.getElementById('saturationSlider');
+  const temperatureSlider = document.getElementById('temperatureSlider');
   const settings = {
     aoEnabled: viewer3D.aoEnabled,
     shadowEnabled: viewer3D.shadowEnabled,
     aoStrength: aoSlider ? parseFloat(aoSlider.value) : 0.7,
     shadowOpacity: opacitySlider ? parseFloat(opacitySlider.value) : 0.12,
     shadowSpread: spreadSlider ? parseFloat(spreadSlider.value) : 100,
+    brightness: brightnessSlider ? parseFloat(brightnessSlider.value) : 1.0,
+    contrast: contrastSlider ? parseFloat(contrastSlider.value) : 1.0,
+    saturation: saturationSlider ? parseFloat(saturationSlider.value) : 1.0,
+    temperature: temperatureSlider ? parseFloat(temperatureSlider.value) : 0.0,
   };
   try {
     localStorage.setItem(VIEWER_SETTINGS_KEY, JSON.stringify(settings));
@@ -173,7 +181,11 @@ function initViewer3D(containerId) {
       maxDistance: { value: 100.1 },
       proj00: { value: 1.0 },
       proj11: { value: 1.0 },
-      aoDebug: { value: 0.0 }
+      aoDebug: { value: 0.0 },
+      brightness: { value: 1.0 },
+      contrast: { value: 1.0 },
+      saturation: { value: 1.0 },
+      temperature: { value: 0.0 }
     },
     vertexShader: [
       'varying vec2 vUv;',
@@ -196,6 +208,10 @@ function initViewer3D(containerId) {
       'uniform float proj00;',
       'uniform float proj11;',
       'uniform float aoDebug;',
+      'uniform float brightness;',
+      'uniform float contrast;',
+      'uniform float saturation;',
+      'uniform float temperature;',
       'varying vec2 vUv;',
       '',
       'float logDepthToViewZ(float d) {',
@@ -263,7 +279,14 @@ function initViewer3D(containerId) {
       '  if (aoDebug > 0.5) {',
       '    gl_FragColor = vec4(vec3(occlusion), 1.0);',
       '  } else {',
-      '    gl_FragColor = vec4(color.rgb * occlusion, color.a);',
+      '    vec3 lit = color.rgb * occlusion * brightness;',
+      '    lit = (lit - 0.5) * contrast + 0.5;',
+      '    float lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));',
+      '    lit = mix(vec3(lum), lit, saturation);',
+      '    lit.r += temperature * 0.5;',
+      '    lit.b -= temperature * 0.5;',
+      '    lit = clamp(lit, 0.0, 1.0);',
+      '    gl_FragColor = vec4(lit, color.a);',
       '  }',
       '}'
     ].join('\n'),
@@ -416,6 +439,74 @@ function initViewer3D(containerId) {
     });
   }
 
+  // Brightness slider
+  const brightnessSlider = document.getElementById('brightnessSlider');
+  const brightnessValue = document.getElementById('brightnessValue');
+  if (brightnessSlider) {
+    if (savedSettings && savedSettings.brightness != null) {
+      brightnessSlider.value = savedSettings.brightness;
+      brightnessValue.textContent = savedSettings.brightness.toFixed(2);
+      viewer3D.aoMaterial.uniforms.brightness.value = savedSettings.brightness;
+    }
+    brightnessSlider.addEventListener('input', () => {
+      const val = parseFloat(brightnessSlider.value);
+      viewer3D.aoMaterial.uniforms.brightness.value = val;
+      brightnessValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Contrast slider
+  const contrastSlider = document.getElementById('contrastSlider');
+  const contrastValue = document.getElementById('contrastValue');
+  if (contrastSlider) {
+    if (savedSettings && savedSettings.contrast != null) {
+      contrastSlider.value = savedSettings.contrast;
+      contrastValue.textContent = savedSettings.contrast.toFixed(2);
+      viewer3D.aoMaterial.uniforms.contrast.value = savedSettings.contrast;
+    }
+    contrastSlider.addEventListener('input', () => {
+      const val = parseFloat(contrastSlider.value);
+      viewer3D.aoMaterial.uniforms.contrast.value = val;
+      contrastValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Saturation slider
+  const saturationSlider = document.getElementById('saturationSlider');
+  const saturationValue = document.getElementById('saturationValue');
+  if (saturationSlider) {
+    if (savedSettings && savedSettings.saturation != null) {
+      saturationSlider.value = savedSettings.saturation;
+      saturationValue.textContent = savedSettings.saturation.toFixed(2);
+      viewer3D.aoMaterial.uniforms.saturation.value = savedSettings.saturation;
+    }
+    saturationSlider.addEventListener('input', () => {
+      const val = parseFloat(saturationSlider.value);
+      viewer3D.aoMaterial.uniforms.saturation.value = val;
+      saturationValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Temperature slider
+  const temperatureSlider = document.getElementById('temperatureSlider');
+  const temperatureValue = document.getElementById('temperatureValue');
+  if (temperatureSlider) {
+    if (savedSettings && savedSettings.temperature != null) {
+      temperatureSlider.value = savedSettings.temperature;
+      temperatureValue.textContent = savedSettings.temperature.toFixed(2);
+      viewer3D.aoMaterial.uniforms.temperature.value = savedSettings.temperature;
+    }
+    temperatureSlider.addEventListener('input', () => {
+      const val = parseFloat(temperatureSlider.value);
+      viewer3D.aoMaterial.uniforms.temperature.value = val;
+      temperatureValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
   // Rotation buttons
   const halfPi = Math.PI / 2;
   document.getElementById('rotateX')?.addEventListener('click', () => {
@@ -491,24 +582,28 @@ function renderViewerPipeline(background) {
   r.clear();
   r.render(scene, camera);
 
-  // Step 2: AO pass (beautyRT → aoRT or direct to screen if no FXAA)
-  if (viewer3D.aoEnabled) {
+  // Step 2: AO + gamma pass (always runs for gamma; aoStrength=0 when AO disabled)
+  {
     const ao = viewer3D.aoMaterial;
     ao.uniforms.tDiffuse.value = viewer3D.beautyRT.texture;
     ao.uniforms.cameraFar.value = camera.far;
     ao.uniforms.proj00.value = camera.projectionMatrix.elements[0];
     ao.uniforms.proj11.value = camera.projectionMatrix.elements[5];
-    ao.uniforms.aoDebug.value = viewer3D.aoDebug ? 1.0 : 0.0;
+    ao.uniforms.aoDebug.value = (viewer3D.aoEnabled && viewer3D.aoDebug) ? 1.0 : 0.0;
+    // When AO is disabled, force aoStrength to 0 so only gamma is applied
+    if (!viewer3D.aoEnabled) {
+      ao.uniforms.aoStrength.value = 0.0;
+    } else {
+      const aoSlider = document.getElementById('aoStrengthSlider');
+      ao.uniforms.aoStrength.value = aoSlider ? parseFloat(aoSlider.value) : 0.7;
+    }
     viewer3D.fsQuad.material = ao;
     r.setRenderTarget(viewer3D.aoRT);
     r.render(viewer3D.fsScene, viewer3D.fsCamera);
-  } else {
-    // No AO: copy beauty to aoRT
-    // Just use beautyRT directly in FXAA step
   }
 
   // Step 3: FXAA pass
-  const source = viewer3D.aoEnabled ? viewer3D.aoRT : viewer3D.beautyRT;
+  const source = viewer3D.aoRT;
   viewer3D.fxaaMaterial.uniforms['tDiffuse'].value = source.texture;
   viewer3D.fsQuad.material = viewer3D.fxaaMaterial;
 
