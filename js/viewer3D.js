@@ -1129,18 +1129,38 @@ function getViewerCamera() {
   return viewer3D.camera;
 }
 
-function exportViewerPNG(baseName) {
+async function exportViewerPNG(baseName) {
   if (!viewer3D.renderer || !viewer3D.scene || !viewer3D.camera) return;
 
   // Render full pipeline with transparent background
   renderAOPipeline(viewer3D, null);
 
-  // Capture from canvas
-  const dataURL = viewer3D.renderer.domElement.toDataURL('image/png');
+  // Capture blob immediately while the transparent frame is still on the canvas
+  const canvas = viewer3D.renderer.domElement;
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: `${baseName}.png`,
+        types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // User cancelled
+    }
+  }
+
+  // Fallback for browsers without File System Access API
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = dataURL;
+  a.href = url;
   a.download = `${baseName}.png`;
   a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ============================================================================
