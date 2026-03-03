@@ -222,6 +222,9 @@ async function processFile() {
         resultViewerCard.classList.add('show');
       }
       loadResultToViewer(vertices, faces);
+
+      // Auto-switch to process tab to show results
+      switchTab('process');
     } catch (err) {
       log(`\nError: ${err.message}`, 'error');
       console.error(err);

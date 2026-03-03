@@ -15,8 +15,8 @@
       <h1>3D <span class="accent">Color Clamper</span></h1>
       <p class="subtitle">Reduce vertex colors to a limited palette for multi-material 3D printing</p>
     </header>
-  
-    <!-- File Upload -->
+
+    <!-- File Upload (shared, above tabs) -->
     <div class="card">
       <h2>Upload</h2>
       <div class="file-drop-zone" id="dropZone">
@@ -35,10 +35,28 @@
       </div>
     </div>
 
+    <!-- Tab Bar -->
+    <div class="tab-bar" id="tabBar" style="display: none;">
+      <button class="tab-btn active" data-tab="viewer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+        Viewer
+      </button>
+      <button class="tab-btn" data-tab="process">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Process
+      </button>
+    </div>
+
+    <!-- Tab: Viewer -->
+    <div class="tab-panel active" id="tab-viewer">
+
     <!-- 3D Viewer -->
     <div class="card" id="viewerCard" style="display: none;">
       <h2>Preview</h2>
-      <p class="viewer-instructions">Click on the model to pick colors</p>
       <div class="viewer-wrapper">
         <div id="viewer3DContainer" class="viewer-container"></div>
         <div class="viewer-buttons">
@@ -117,6 +135,20 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    </div><!-- /tab-viewer -->
+
+    <!-- Tab: Process -->
+    <div class="tab-panel" id="tab-process">
+
+    <!-- Process Viewer (Color Picker) -->
+    <div class="card" id="processViewerCard" style="display: none;">
+      <h2>Color Picker</h2>
+      <p class="viewer-instructions">Click on the model to pick colors</p>
+      <div class="viewer-wrapper">
+        <div id="processViewer3DContainer" class="viewer-container"></div>
       </div>
     </div>
 
@@ -229,6 +261,8 @@
       <h2>Processing Log</h2>
       <div class="log-container" id="logContainer"></div>
     </div>
+
+    </div><!-- /tab-process -->
   </div>
 
   <!-- Download Modal -->
@@ -308,6 +342,7 @@
   <script src="js/pickedPalette.js"></script>
   <script src="js/processing.js"></script>
   <script src="js/modal.js"></script>
+  <script src="js/tabs.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

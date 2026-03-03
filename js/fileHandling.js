@@ -76,9 +76,18 @@ function handleFile(file) {
   clampedTexture = null;
   glbExtractedPalette = null;
 
-  // Clear previous viewer
+  // Clear previous viewers
   clearViewer();
+  clearProcessViewer();
   parsedModelData = null;
+
+  // Hide viewer cards and tabs until model loads
+  const viewerCard = document.getElementById('viewerCard');
+  if (viewerCard) viewerCard.style.display = 'none';
+  const processViewerCard = document.getElementById('processViewerCard');
+  if (processViewerCard) processViewerCard.style.display = 'none';
+  const pickedPaletteCard = document.getElementById('pickedPaletteCard');
+  if (pickedPaletteCard) pickedPaletteCard.style.display = 'none';
 
   // Show loader
   showLoader('Loading file...');
@@ -104,6 +113,7 @@ function handleFile(file) {
           originalLines: parsed.originalLines
         };
         loadModelToViewer(parsed.vertices, parsed.faces);
+        loadModelToProcessViewer(parsed.vertices, parsed.faces);
         initColorPicker();
       } catch (err) {
         console.error('Error parsing OBJ for viewer:', err);
@@ -130,6 +140,7 @@ function handleFile(file) {
             faces: parsed.faces
           };
           loadModelToViewer(parsed.vertices, parsed.faces);
+          loadModelToProcessViewer(parsed.vertices, parsed.faces);
           initColorPicker();
         } catch (err) {
           console.error('Error parsing STL for viewer:', err);
@@ -162,6 +173,7 @@ function handleFile(file) {
               texture: parsed.texture
             };
             loadModelToViewer(parsed.vertices, parsed.faces);
+            loadModelToProcessViewer(parsed.vertices, parsed.faces);
             initColorPicker();
           } catch (err) {
             console.error('Error parsing GLB for viewer:', err);
@@ -194,6 +206,7 @@ function handleFile(file) {
           faceColors: parsed.faceColors
         };
         loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
+        loadModelToProcessViewer(parsed.vertices, parsed.faces, parsed.faceColors);
         initColorPicker();
 
         // Show export buttons if the model has vertex colors

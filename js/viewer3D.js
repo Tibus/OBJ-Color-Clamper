@@ -71,6 +71,136 @@ function loadViewerSettings() {
   }
 }
 
+// ============================================================================
+// Shader Constants
+// ============================================================================
+
+const AO_VERTEX_SHADER = [
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vUv = uv;',
+  '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+  '}'
+].join('\n');
+
+const AO_FRAGMENT_SHADER = [
+  '#define NUM_DIRS 12',
+  '#define NUM_STEPS 3',
+  'uniform sampler2D tDiffuse;',
+  'uniform sampler2D tDepth;',
+  'uniform float cameraFar;',
+  'uniform vec2 resolution;',
+  'uniform float kernelRadius;',
+  'uniform float aoStrength;',
+  'uniform float minDistance;',
+  'uniform float maxDistance;',
+  'uniform float proj00;',
+  'uniform float proj11;',
+  'uniform float aoDebug;',
+  'uniform float brightness;',
+  'uniform float contrast;',
+  'uniform float saturation;',
+  'uniform float temperature;',
+  'varying vec2 vUv;',
+  '',
+  'float logDepthToViewZ(float d) {',
+  '  return 1.0 - pow(2.0, d * log2(cameraFar + 1.0));',
+  '}',
+  '',
+  'vec3 viewPosAt(vec2 uv) {',
+  '  float d = texture2D(tDepth, uv).x;',
+  '  if (d >= 1.0) return vec3(0.0, 0.0, 1.0);',
+  '  float vz = logDepthToViewZ(d);',
+  '  vec2 ndc = (uv - 0.5) * 2.0;',
+  '  return vec3(ndc.x * (-vz) / proj00, ndc.y * (-vz) / proj11, vz);',
+  '}',
+  '',
+  'float hash12(vec2 p) {',
+  '  vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
+  '  p3 += dot(p3, p3.yzx + 33.33);',
+  '  return fract((p3.x + p3.y) * p3.z);',
+  '}',
+  '',
+  'void main() {',
+  '  vec4 color = texture2D(tDiffuse, vUv);',
+  '  float d = texture2D(tDepth, vUv).x;',
+  '  if (d >= 1.0) {',
+  '    gl_FragColor = (aoDebug > 0.5) ? vec4(1.0) : color;',
+  '    return;',
+  '  }',
+  '',
+  '  vec3 pos = viewPosAt(vUv);',
+  '  vec2 texel = 1.0 / resolution;',
+  '',
+  '  // Bilateral normal reconstruction',
+  '  vec3 posL = viewPosAt(vUv - vec2(texel.x, 0.0));',
+  '  vec3 posR = viewPosAt(vUv + vec2(texel.x, 0.0));',
+  '  vec3 posD = viewPosAt(vUv - vec2(0.0, texel.y));',
+  '  vec3 posU = viewPosAt(vUv + vec2(0.0, texel.y));',
+  '  vec3 dx = (abs(posR.z - pos.z) < abs(posL.z - pos.z)) ? (posR - pos) : (pos - posL);',
+  '  vec3 dy = (abs(posU.z - pos.z) < abs(posD.z - pos.z)) ? (posU - pos) : (pos - posD);',
+  '  vec3 normal = normalize(cross(dx, dy));',
+  '',
+  '  float ao = 0.0;',
+  '  float total = 0.0;',
+  '  float rnd = hash12(gl_FragCoord.xy);',
+  '  float angleStep = 6.283185 / float(NUM_DIRS);',
+  '',
+  '  for (int i = 0; i < NUM_DIRS; i++) {',
+  '    float angle = (float(i) + rnd) * angleStep;',
+  '    vec2 dir = vec2(cos(angle), sin(angle));',
+  '    for (int j = 1; j <= NUM_STEPS; j++) {',
+  '      float t = float(j) / float(NUM_STEPS);',
+  '      vec2 sampleUv = vUv + dir * t * kernelRadius * texel;',
+  '      if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) { total += 1.0; continue; }',
+  '      vec3 sp = viewPosAt(sampleUv);',
+  '      if (sp.z > -0.001) { total += 1.0; continue; }',
+  '      vec3 diff = sp - pos;',
+  '      float dist = length(diff);',
+  '      if (dist < minDistance || dist > maxDistance) { total += 1.0; continue; }',
+  '      ao += max(0.0, dot(normal, normalize(diff)));',
+  '      total += 1.0;',
+  '    }',
+  '  }',
+  '',
+  '  if (total > 0.0) ao /= total;',
+  '  float occlusion = clamp(1.0 - ao * aoStrength, 0.0, 1.0);',
+  '  if (aoDebug > 0.5) {',
+  '    gl_FragColor = vec4(vec3(occlusion), 1.0);',
+  '  } else {',
+  '    vec3 lit = color.rgb * occlusion * brightness;',
+  '    lit = (lit - 0.5) * contrast + 0.5;',
+  '    float lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));',
+  '    lit = mix(vec3(lum), lit, saturation);',
+  '    lit.r += temperature * 0.5;',
+  '    lit.b -= temperature * 0.5;',
+  '    lit = clamp(lit, 0.0, 1.0);',
+  '    gl_FragColor = vec4(lit, color.a);',
+  '  }',
+  '}'
+].join('\n');
+
+const COMPOSITE_FRAGMENT_SHADER = [
+  'uniform sampler2D tModel;',
+  'uniform sampler2D tShadow;',
+  'varying vec2 vUv;',
+  'void main() {',
+  '  vec4 model = texture2D(tModel, vUv);',
+  '  vec4 shadow = texture2D(tShadow, vUv);',
+  '  float s = shadow.a;',
+  '  vec3 rgb = model.rgb * (1.0 - s);',
+  '  float a = model.a + s * (1.0 - model.a);' +
+  '  if(model.a < 0.01) {' +
+  '    rgb = vec3(0.0);' +
+  '  }' +
+  '  gl_FragColor = vec4(rgb, a);',
+  '}'
+].join('\n');
+
+// ============================================================================
+// Global Viewer Objects
+// ============================================================================
+
 let viewer3D = {
   scene: null,
   camera: null,
@@ -81,55 +211,102 @@ let viewer3D = {
   animationId: null,
   vertices: null,
   faces: null,
-  // Custom AO pipeline (works with logarithmicDepthBuffer)
   beautyRT: null,
   aoRT: null,
+  shadowRT: null,
   aoMaterial: null,
   fxaaMaterial: null,
+  compositeMaterial: null,
   fsQuad: null,
   fsScene: null,
   fsCamera: null,
   aoEnabled: true,
   aoDebug: false,
-  shadowEnabled: true
+  shadowEnabled: true,
+  directionalLight: null,
+  groundPlane: null,
+  shadowBaseSpread: null
 };
 
-function initViewer3D(containerId) {
+let processViewer3D = {
+  scene: null,
+  camera: null,
+  renderer: null,
+  controls: null,
+  mesh: null,
+  container: null,
+  animationId: null,
+  vertices: null,
+  faces: null,
+  beautyRT: null,
+  aoRT: null,
+  shadowRT: null,
+  aoMaterial: null,
+  fxaaMaterial: null,
+  compositeMaterial: null,
+  fsQuad: null,
+  fsScene: null,
+  fsCamera: null,
+  aoEnabled: true,
+  aoDebug: false,
+  shadowEnabled: true,
+  directionalLight: null,
+  groundPlane: null,
+  shadowBaseSpread: null
+};
+
+// ============================================================================
+// Shared AO Pipeline Functions
+// ============================================================================
+
+/**
+ * Sets up the full AO rendering pipeline for a viewer object.
+ * @param {object} viewer - The viewer state object to populate
+ * @param {string} containerId - DOM container ID
+ * @param {object} opts - Options: { preserveDrawingBuffer, saveCameraOnChange }
+ */
+function setupAOPipeline(viewer, containerId, opts = {}) {
   const container = document.getElementById(containerId);
   if (!container) return false;
 
-  viewer3D.container = container;
-
-  // Clear any existing content
+  viewer.container = container;
   container.innerHTML = '';
 
   // Create scene
-  viewer3D.scene = new THREE.Scene();
-  viewer3D.scene.background = new THREE.Color(0xffffff);
+  viewer.scene = new THREE.Scene();
+  viewer.scene.background = new THREE.Color(0xffffff);
 
   // Create camera
   const width = container.clientWidth || 400;
   const height = container.clientHeight || 300;
-  viewer3D.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-  viewer3D.camera.position.set(0, 0, 5);
+  viewer.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+  viewer.camera.position.set(0, 0, 5);
 
-  // Create renderer (preserveDrawingBuffer for PNG export)
-  viewer3D.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true, premultipliedAlpha: false, logarithmicDepthBuffer: true });
-  viewer3D.renderer.setSize(width, height);
-  viewer3D.renderer.setPixelRatio(window.devicePixelRatio);
-  viewer3D.renderer.shadowMap.enabled = true;
-  viewer3D.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  container.appendChild(viewer3D.renderer.domElement);
+  // Create renderer
+  viewer.renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    preserveDrawingBuffer: !!opts.preserveDrawingBuffer,
+    alpha: true,
+    premultipliedAlpha: false,
+    logarithmicDepthBuffer: true
+  });
+  viewer.renderer.setSize(width, height);
+  viewer.renderer.setPixelRatio(window.devicePixelRatio);
+  viewer.renderer.shadowMap.enabled = true;
+  viewer.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(viewer.renderer.domElement);
 
   // Add OrbitControls
-  viewer3D.controls = new THREE.OrbitControls(viewer3D.camera, viewer3D.renderer.domElement);
-  viewer3D.controls.enableDamping = true;
-  viewer3D.controls.dampingFactor = 0.05;
-  viewer3D.controls.addEventListener('change', saveCameraStateDebounced);
+  viewer.controls = new THREE.OrbitControls(viewer.camera, viewer.renderer.domElement);
+  viewer.controls.enableDamping = true;
+  viewer.controls.dampingFactor = 0.05;
+  if (opts.saveCameraOnChange) {
+    viewer.controls.addEventListener('change', saveCameraStateDebounced);
+  }
 
   // Add lights
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-  viewer3D.scene.add(ambientLight);
+  viewer.scene.add(ambientLight);
 
   const directionalLight = new THREE.DirectionalLight(0xffffff, 0.3);
   directionalLight.position.set(5, 10, 7);
@@ -144,35 +321,35 @@ function initViewer3D(containerId) {
   directionalLight.shadow.camera.bottom = -20;
   directionalLight.shadow.radius = 100;
   directionalLight.shadow.bias = -0.0001;
-  viewer3D.scene.add(directionalLight);
-  viewer3D.directionalLight = directionalLight;
+  viewer.scene.add(directionalLight);
+  viewer.directionalLight = directionalLight;
 
-  // Custom AO pipeline (compatible with logarithmicDepthBuffer)
+  // Render targets (2x supersampled)
   const ssW = width * 2, ssH = height * 2;
 
   // Beauty render target with depth texture
-  viewer3D.beautyRT = new THREE.WebGLRenderTarget(ssW, ssH, {
+  viewer.beautyRT = new THREE.WebGLRenderTarget(ssW, ssH, {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
   });
-  viewer3D.beautyRT.depthTexture = new THREE.DepthTexture();
-  viewer3D.beautyRT.depthTexture.type = THREE.UnsignedIntType;
+  viewer.beautyRT.depthTexture = new THREE.DepthTexture();
+  viewer.beautyRT.depthTexture.type = THREE.UnsignedIntType;
 
   // AO output render target
-  viewer3D.aoRT = new THREE.WebGLRenderTarget(ssW, ssH, {
+  viewer.aoRT = new THREE.WebGLRenderTarget(ssW, ssH, {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
   });
 
   // Full-screen quad for post-processing passes
-  viewer3D.fsCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  viewer3D.fsScene = new THREE.Scene();
-  viewer3D.fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), null);
-  viewer3D.fsScene.add(viewer3D.fsQuad);
+  viewer.fsCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  viewer.fsScene = new THREE.Scene();
+  viewer.fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), null);
+  viewer.fsScene.add(viewer.fsQuad);
 
-  // AO shader material (handles log depth natively)
-  viewer3D.aoMaterial = new THREE.ShaderMaterial({
+  // AO shader material
+  viewer.aoMaterial = new THREE.ShaderMaterial({
     uniforms: {
       tDiffuse: { value: null },
-      tDepth: { value: viewer3D.beautyRT.depthTexture },
+      tDepth: { value: viewer.beautyRT.depthTexture },
       cameraFar: { value: 1000.0 },
       resolution: { value: new THREE.Vector2(ssW, ssH) },
       kernelRadius: { value: 20.0 },
@@ -187,487 +364,153 @@ function initViewer3D(containerId) {
       saturation: { value: 1.0 },
       temperature: { value: 0.0 }
     },
-    vertexShader: [
-      'varying vec2 vUv;',
-      'void main() {',
-      '  vUv = uv;',
-      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
-      '}'
-    ].join('\n'),
-    fragmentShader: [
-      '#define NUM_DIRS 12',
-      '#define NUM_STEPS 3',
-      'uniform sampler2D tDiffuse;',
-      'uniform sampler2D tDepth;',
-      'uniform float cameraFar;',
-      'uniform vec2 resolution;',
-      'uniform float kernelRadius;',
-      'uniform float aoStrength;',
-      'uniform float minDistance;',
-      'uniform float maxDistance;',
-      'uniform float proj00;',
-      'uniform float proj11;',
-      'uniform float aoDebug;',
-      'uniform float brightness;',
-      'uniform float contrast;',
-      'uniform float saturation;',
-      'uniform float temperature;',
-      'varying vec2 vUv;',
-      '',
-      'float logDepthToViewZ(float d) {',
-      '  return 1.0 - pow(2.0, d * log2(cameraFar + 1.0));',
-      '}',
-      '',
-      'vec3 viewPosAt(vec2 uv) {',
-      '  float d = texture2D(tDepth, uv).x;',
-      '  if (d >= 1.0) return vec3(0.0, 0.0, 1.0);',
-      '  float vz = logDepthToViewZ(d);',
-      '  vec2 ndc = (uv - 0.5) * 2.0;',
-      '  return vec3(ndc.x * (-vz) / proj00, ndc.y * (-vz) / proj11, vz);',
-      '}',
-      '',
-      'float hash12(vec2 p) {',
-      '  vec3 p3 = fract(vec3(p.xyx) * 0.1031);',
-      '  p3 += dot(p3, p3.yzx + 33.33);',
-      '  return fract((p3.x + p3.y) * p3.z);',
-      '}',
-      '',
-      'void main() {',
-      '  vec4 color = texture2D(tDiffuse, vUv);',
-      '  float d = texture2D(tDepth, vUv).x;',
-      '  if (d >= 1.0) {',
-      '    gl_FragColor = (aoDebug > 0.5) ? vec4(1.0) : color;',
-      '    return;',
-      '  }',
-      '',
-      '  vec3 pos = viewPosAt(vUv);',
-      '  vec2 texel = 1.0 / resolution;',
-      '',
-      '  // Bilateral normal reconstruction',
-      '  vec3 posL = viewPosAt(vUv - vec2(texel.x, 0.0));',
-      '  vec3 posR = viewPosAt(vUv + vec2(texel.x, 0.0));',
-      '  vec3 posD = viewPosAt(vUv - vec2(0.0, texel.y));',
-      '  vec3 posU = viewPosAt(vUv + vec2(0.0, texel.y));',
-      '  vec3 dx = (abs(posR.z - pos.z) < abs(posL.z - pos.z)) ? (posR - pos) : (pos - posL);',
-      '  vec3 dy = (abs(posU.z - pos.z) < abs(posD.z - pos.z)) ? (posU - pos) : (pos - posD);',
-      '  vec3 normal = normalize(cross(dx, dy));',
-      '',
-      '  float ao = 0.0;',
-      '  float total = 0.0;',
-      '  float rnd = hash12(gl_FragCoord.xy);',
-      '  float angleStep = 6.283185 / float(NUM_DIRS);',
-      '',
-      '  for (int i = 0; i < NUM_DIRS; i++) {',
-      '    float angle = (float(i) + rnd) * angleStep;',
-      '    vec2 dir = vec2(cos(angle), sin(angle));',
-      '    for (int j = 1; j <= NUM_STEPS; j++) {',
-      '      float t = float(j) / float(NUM_STEPS);',
-      '      vec2 sampleUv = vUv + dir * t * kernelRadius * texel;',
-      '      if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) { total += 1.0; continue; }',
-      '      vec3 sp = viewPosAt(sampleUv);',
-      '      if (sp.z > -0.001) { total += 1.0; continue; }',
-      '      vec3 diff = sp - pos;',
-      '      float dist = length(diff);',
-      '      if (dist < minDistance || dist > maxDistance) { total += 1.0; continue; }',
-      '      ao += max(0.0, dot(normal, normalize(diff)));',
-      '      total += 1.0;',
-      '    }',
-      '  }',
-      '',
-      '  if (total > 0.0) ao /= total;',
-      '  float occlusion = clamp(1.0 - ao * aoStrength, 0.0, 1.0);',
-      '  if (aoDebug > 0.5) {',
-      '    gl_FragColor = vec4(vec3(occlusion), 1.0);',
-      '  } else {',
-      '    vec3 lit = color.rgb * occlusion * brightness;',
-      '    lit = (lit - 0.5) * contrast + 0.5;',
-      '    float lum = dot(lit, vec3(0.2126, 0.7152, 0.0722));',
-      '    lit = mix(vec3(lum), lit, saturation);',
-      '    lit.r += temperature * 0.5;',
-      '    lit.b -= temperature * 0.5;',
-      '    lit = clamp(lit, 0.0, 1.0);',
-      '    gl_FragColor = vec4(lit, color.a);',
-      '  }',
-      '}'
-    ].join('\n'),
+    vertexShader: AO_VERTEX_SHADER,
+    fragmentShader: AO_FRAGMENT_SHADER,
     depthWrite: false,
     depthTest: false
   });
 
   // FXAA material
-  viewer3D.fxaaMaterial = new THREE.ShaderMaterial({
+  viewer.fxaaMaterial = new THREE.ShaderMaterial({
     uniforms: THREE.UniformsUtils.clone(THREE.FXAAShader.uniforms),
     vertexShader: THREE.FXAAShader.vertexShader,
     fragmentShader: THREE.FXAAShader.fragmentShader,
     depthWrite: false,
     depthTest: false
   });
-  viewer3D.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
+  viewer.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
 
   // Shadow render target (for PNG export compositing)
-  viewer3D.shadowRT = new THREE.WebGLRenderTarget(ssW, ssH, {
+  viewer.shadowRT = new THREE.WebGLRenderTarget(ssW, ssH, {
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
   });
 
   // Composite material: merges model + shadow for correct transparent PNG
-  viewer3D.compositeMaterial = new THREE.ShaderMaterial({
+  viewer.compositeMaterial = new THREE.ShaderMaterial({
     uniforms: {
       tModel: { value: null },
       tShadow: { value: null }
     },
-    vertexShader: [
-      'varying vec2 vUv;',
-      'void main() {',
-      '  vUv = uv;',
-      '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
-      '}'
-    ].join('\n'),
-    fragmentShader: [
-      'uniform sampler2D tModel;',
-      'uniform sampler2D tShadow;',
-      'varying vec2 vUv;',
-      'void main() {',
-      '  vec4 model = texture2D(tModel, vUv);',
-      '  vec4 shadow = texture2D(tShadow, vUv);',
-      '  float s = shadow.a;',
-      '  vec3 rgb = model.rgb * (1.0 - s);',
-      '  float a = model.a + s * (1.0 - model.a);' +
-      '  if(model.a < 0.01) {' +
-      '    rgb = vec3(0.0);' +
-      '  }' +
-      '  gl_FragColor = vec4(rgb, a);',
-      '}'
-    ].join('\n'),
+    vertexShader: AO_VERTEX_SHADER,
+    fragmentShader: COMPOSITE_FRAGMENT_SHADER,
     depthWrite: false,
     depthTest: false
   });
 
-  // Restore saved viewer settings
-  const savedSettings = loadViewerSettings();
-
-  // AO toggle button
-  viewer3D.aoEnabled = savedSettings ? savedSettings.aoEnabled : true;
-  const toggleAoBtn = document.getElementById('toggleAoBtn');
-  if (toggleAoBtn) {
-    toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
-    toggleAoBtn.addEventListener('click', () => {
-      viewer3D.aoEnabled = !viewer3D.aoEnabled;
-      toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
-      saveViewerSettings();
-    });
-  }
-
-  // Shadow toggle button
-  viewer3D.shadowEnabled = savedSettings ? savedSettings.shadowEnabled : true;
-  const toggleShadowBtn = document.getElementById('toggleShadowBtn');
-  if (toggleShadowBtn) {
-    toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
-    toggleShadowBtn.addEventListener('click', () => {
-      viewer3D.shadowEnabled = !viewer3D.shadowEnabled;
-      toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
-      saveViewerSettings();
-    });
-  }
-
-  // Settings panel toggle
-  const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
-  const settingsPanel = document.getElementById('viewerSettings');
-  if (toggleSettingsBtn && settingsPanel) {
-    toggleSettingsBtn.addEventListener('click', () => {
-      settingsPanel.classList.toggle('show');
-      toggleSettingsBtn.classList.toggle('active', settingsPanel.classList.contains('show'));
-    });
-  }
-
-  // Settings sliders
-  const aoStrengthSlider = document.getElementById('aoStrengthSlider');
-  const aoStrengthValue = document.getElementById('aoStrengthValue');
-  if (aoStrengthSlider) {
-    if (savedSettings && savedSettings.aoStrength != null) {
-      aoStrengthSlider.value = savedSettings.aoStrength;
-      aoStrengthValue.textContent = savedSettings.aoStrength.toFixed(2);
-      viewer3D.aoMaterial.uniforms.aoStrength.value = savedSettings.aoStrength;
-    }
-    aoStrengthSlider.addEventListener('input', () => {
-      const val = parseFloat(aoStrengthSlider.value);
-      viewer3D.aoMaterial.uniforms.aoStrength.value = val;
-      aoStrengthValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  const shadowOpacitySlider = document.getElementById('shadowOpacitySlider');
-  const shadowOpacityValue = document.getElementById('shadowOpacityValue');
-  if (shadowOpacitySlider) {
-    if (savedSettings && savedSettings.shadowOpacity != null) {
-      shadowOpacitySlider.value = savedSettings.shadowOpacity;
-      shadowOpacityValue.textContent = savedSettings.shadowOpacity.toFixed(2);
-      if (viewer3D.groundPlane) {
-        viewer3D.groundPlane.material.opacity = savedSettings.shadowOpacity;
-      }
-    }
-    shadowOpacitySlider.addEventListener('input', () => {
-      const val = parseFloat(shadowOpacitySlider.value);
-      if (viewer3D.groundPlane) {
-        viewer3D.groundPlane.material.opacity = val;
-      }
-      shadowOpacityValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  const shadowSpreadSlider = document.getElementById('shadowSpreadSlider');
-  const shadowSpreadValue = document.getElementById('shadowSpreadValue');
-  if (shadowSpreadSlider) {
-    if (savedSettings && savedSettings.shadowSpread != null) {
-      shadowSpreadSlider.value = savedSettings.shadowSpread;
-      shadowSpreadValue.textContent = savedSettings.shadowSpread;
-    }
-    shadowSpreadSlider.addEventListener('input', () => {
-      let val = parseFloat(shadowSpreadSlider.value);
-      val = Math.max(val, 10);
-      if (viewer3D.directionalLight && viewer3D.shadowBaseSpread) {
-        const s = viewer3D.shadowBaseSpread * 6 * (val / 100);
-        viewer3D.directionalLight.shadow.camera.left = -s;
-        viewer3D.directionalLight.shadow.camera.right = s;
-        viewer3D.directionalLight.shadow.camera.top = s;
-        viewer3D.directionalLight.shadow.camera.bottom = -s;
-        viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
-      }
-      shadowSpreadValue.textContent = val;
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  // Brightness slider
-  const brightnessSlider = document.getElementById('brightnessSlider');
-  const brightnessValue = document.getElementById('brightnessValue');
-  if (brightnessSlider) {
-    if (savedSettings && savedSettings.brightness != null) {
-      brightnessSlider.value = savedSettings.brightness;
-      brightnessValue.textContent = savedSettings.brightness.toFixed(2);
-      viewer3D.aoMaterial.uniforms.brightness.value = savedSettings.brightness;
-    }
-    brightnessSlider.addEventListener('input', () => {
-      const val = parseFloat(brightnessSlider.value);
-      viewer3D.aoMaterial.uniforms.brightness.value = val;
-      brightnessValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  // Contrast slider
-  const contrastSlider = document.getElementById('contrastSlider');
-  const contrastValue = document.getElementById('contrastValue');
-  if (contrastSlider) {
-    if (savedSettings && savedSettings.contrast != null) {
-      contrastSlider.value = savedSettings.contrast;
-      contrastValue.textContent = savedSettings.contrast.toFixed(2);
-      viewer3D.aoMaterial.uniforms.contrast.value = savedSettings.contrast;
-    }
-    contrastSlider.addEventListener('input', () => {
-      const val = parseFloat(contrastSlider.value);
-      viewer3D.aoMaterial.uniforms.contrast.value = val;
-      contrastValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  // Saturation slider
-  const saturationSlider = document.getElementById('saturationSlider');
-  const saturationValue = document.getElementById('saturationValue');
-  if (saturationSlider) {
-    if (savedSettings && savedSettings.saturation != null) {
-      saturationSlider.value = savedSettings.saturation;
-      saturationValue.textContent = savedSettings.saturation.toFixed(2);
-      viewer3D.aoMaterial.uniforms.saturation.value = savedSettings.saturation;
-    }
-    saturationSlider.addEventListener('input', () => {
-      const val = parseFloat(saturationSlider.value);
-      viewer3D.aoMaterial.uniforms.saturation.value = val;
-      saturationValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  // Temperature slider
-  const temperatureSlider = document.getElementById('temperatureSlider');
-  const temperatureValue = document.getElementById('temperatureValue');
-  if (temperatureSlider) {
-    if (savedSettings && savedSettings.temperature != null) {
-      temperatureSlider.value = savedSettings.temperature;
-      temperatureValue.textContent = savedSettings.temperature.toFixed(2);
-      viewer3D.aoMaterial.uniforms.temperature.value = savedSettings.temperature;
-    }
-    temperatureSlider.addEventListener('input', () => {
-      const val = parseFloat(temperatureSlider.value);
-      viewer3D.aoMaterial.uniforms.temperature.value = val;
-      temperatureValue.textContent = val.toFixed(2);
-      saveViewerSettingsDebounced();
-    });
-  }
-
-  // Rotation buttons
-  const halfPi = Math.PI / 2;
-  document.getElementById('rotateX')?.addEventListener('click', () => {
-    if (!viewer3D.mesh) return;
-    viewer3D.mesh.rotation.x += halfPi;
-    updateGroundAndShadow();
-  });
-  document.getElementById('rotateY')?.addEventListener('click', () => {
-    if (!viewer3D.mesh) return;
-    viewer3D.mesh.rotation.y += halfPi;
-    updateGroundAndShadow();
-  });
-  document.getElementById('rotateZ')?.addEventListener('click', () => {
-    if (!viewer3D.mesh) return;
-    viewer3D.mesh.rotation.z += halfPi;
-    updateGroundAndShadow();
-  });
-
-  // Handle resize
-  window.addEventListener('resize', onViewerResize);
-
-  // Start animation loop
-  animate();
+  // Default state
+  viewer.aoEnabled = true;
+  viewer.aoDebug = false;
+  viewer.shadowEnabled = true;
 
   return true;
 }
 
-function onViewerResize() {
-  if (!viewer3D.container || !viewer3D.camera || !viewer3D.renderer) return;
-
-  const width = viewer3D.container.clientWidth;
-  const height = viewer3D.container.clientHeight;
-
-  viewer3D.camera.aspect = width / height;
-  viewer3D.camera.updateProjectionMatrix();
-  viewer3D.renderer.setSize(width, height);
-
-  const ssW = width * 2, ssH = height * 2;
-  if (viewer3D.beautyRT) viewer3D.beautyRT.setSize(ssW, ssH);
-  if (viewer3D.aoRT) viewer3D.aoRT.setSize(ssW, ssH);
-  if (viewer3D.shadowRT) viewer3D.shadowRT.setSize(ssW, ssH);
-  if (viewer3D.aoMaterial) viewer3D.aoMaterial.uniforms.resolution.value.set(ssW, ssH);
-  if (viewer3D.fxaaMaterial) viewer3D.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
-}
-
-function animate() {
-  viewer3D.animationId = requestAnimationFrame(animate);
-
-  if (viewer3D.controls) {
-    viewer3D.controls.update();
-  }
-
-  if (viewer3D.beautyRT && viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
-    renderViewerPipeline(viewer3D.scene.background);
-  } else if (viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
-    viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
-  }
-}
-
-function renderViewerPipeline(background) {
-  const r = viewer3D.renderer;
-  const scene = viewer3D.scene;
-  const camera = viewer3D.camera;
+/**
+ * Render the full AO pipeline for a viewer.
+ */
+function renderAOPipeline(viewer, background) {
+  const r = viewer.renderer;
+  const scene = viewer.scene;
+  const camera = viewer.camera;
 
   // Temporarily set scene background (null = transparent for PNG export)
   const savedBg = scene.background;
   scene.background = background;
 
   // Step 1: Render scene to beautyRT (with depth) — hide ground so AO only affects mesh
-  if (viewer3D.groundPlane) viewer3D.groundPlane.visible = false;
-  r.setRenderTarget(viewer3D.beautyRT);
+  if (viewer.groundPlane) viewer.groundPlane.visible = false;
+  r.setRenderTarget(viewer.beautyRT);
   r.setClearColor(background || 0xFFFFFF, background ? 1 : 0);
   r.clear();
   r.render(scene, camera);
 
   // Step 2: AO + gamma pass (always runs for gamma; aoStrength=0 when AO disabled)
   {
-    const ao = viewer3D.aoMaterial;
-    ao.uniforms.tDiffuse.value = viewer3D.beautyRT.texture;
+    const ao = viewer.aoMaterial;
+    ao.uniforms.tDiffuse.value = viewer.beautyRT.texture;
     ao.uniforms.cameraFar.value = camera.far;
     ao.uniforms.proj00.value = camera.projectionMatrix.elements[0];
     ao.uniforms.proj11.value = camera.projectionMatrix.elements[5];
-    ao.uniforms.aoDebug.value = (viewer3D.aoEnabled && viewer3D.aoDebug) ? 1.0 : 0.0;
+    ao.uniforms.aoDebug.value = (viewer.aoEnabled && viewer.aoDebug) ? 1.0 : 0.0;
     // When AO is disabled, force aoStrength to 0 so only gamma is applied
-    if (!viewer3D.aoEnabled) {
+    if (!viewer.aoEnabled) {
       ao.uniforms.aoStrength.value = 0.0;
     } else {
       const aoSlider = document.getElementById('aoStrengthSlider');
       ao.uniforms.aoStrength.value = aoSlider ? parseFloat(aoSlider.value) : 0.7;
     }
-    viewer3D.fsQuad.material = ao;
-    r.setRenderTarget(viewer3D.aoRT);
-    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+
+    viewer.fsQuad.material = ao;
+    r.setRenderTarget(viewer.aoRT);
+    r.render(viewer.fsScene, viewer.fsCamera);
   }
 
   // Step 3: FXAA pass
-  const source = viewer3D.aoRT;
-  viewer3D.fxaaMaterial.uniforms['tDiffuse'].value = source.texture;
-  viewer3D.fsQuad.material = viewer3D.fxaaMaterial;
+  const source = viewer.aoRT;
+  viewer.fxaaMaterial.uniforms['tDiffuse'].value = source.texture;
+  viewer.fsQuad.material = viewer.fxaaMaterial;
 
-  if (!background && viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
+  if (!background && viewer.shadowEnabled && viewer.groundPlane && viewer.mesh) {
     // PNG export path: render model to RT, shadow to RT, then composite
     // Step 3a: FXAA → modelRT (write to the RT that FXAA is NOT reading from)
-    const modelRT = viewer3D.aoEnabled ? viewer3D.beautyRT : viewer3D.aoRT;
+    const modelRT = viewer.aoEnabled ? viewer.beautyRT : viewer.aoRT;
     r.setRenderTarget(modelRT);
     r.setClearColor(0x000000, 0);
     r.clear();
-    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+    r.render(viewer.fsScene, viewer.fsCamera);
 
     // Step 4a: Shadow → shadowRT (black clear for correct black-transparent shadow)
-    viewer3D.groundPlane.visible = true;
+    viewer.groundPlane.visible = true;
     scene.background = null;
-    r.setRenderTarget(viewer3D.shadowRT);
+    r.setRenderTarget(viewer.shadowRT);
     r.setClearColor(0x000000, 0);
     r.clear();
     r.autoClear = false;
     r.shadowMap.autoUpdate = false;
 
     // Depth pass: mesh only (for occlusion)
-    viewer3D.mesh.material.colorWrite = false;
+    viewer.mesh.material.colorWrite = false;
     r.render(scene, camera);
-    viewer3D.mesh.material.colorWrite = true;
+    viewer.mesh.material.colorWrite = true;
 
     // Shadow pass: ground only
-    viewer3D.mesh.visible = false;
+    viewer.mesh.visible = false;
     r.render(scene, camera);
-    viewer3D.mesh.visible = true;
+    viewer.mesh.visible = true;
     r.autoClear = true;
     r.shadowMap.autoUpdate = true;
 
     // Step 5: Composite model + shadow → screen
-    viewer3D.compositeMaterial.uniforms.tModel.value = modelRT.texture;
-    viewer3D.compositeMaterial.uniforms.tShadow.value = viewer3D.shadowRT.texture;
-    viewer3D.fsQuad.material = viewer3D.compositeMaterial;
+    viewer.compositeMaterial.uniforms.tModel.value = modelRT.texture;
+    viewer.compositeMaterial.uniforms.tShadow.value = viewer.shadowRT.texture;
+    viewer.fsQuad.material = viewer.compositeMaterial;
     r.setRenderTarget(null);
     r.setClearColor(0x000000, 0);
     r.clear();
-    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+    r.render(viewer.fsScene, viewer.fsCamera);
   } else {
     // Normal screen path
     r.setRenderTarget(null);
     r.setClearColor(background || 0xFFFFFF, background ? 1 : 0);
     r.clear();
-    r.render(viewer3D.fsScene, viewer3D.fsCamera);
+    r.render(viewer.fsScene, viewer.fsCamera);
 
     // Step 4: Ground plane overlay with shadow (direct blending on screen)
-    if (viewer3D.shadowEnabled && viewer3D.groundPlane && viewer3D.mesh) {
-      viewer3D.groundPlane.visible = true;
+    if (viewer.shadowEnabled && viewer.groundPlane && viewer.mesh) {
+      viewer.groundPlane.visible = true;
       scene.background = null;
       r.autoClear = false;
       r.shadowMap.autoUpdate = false;
 
       r.clearDepth();
-      viewer3D.mesh.material.colorWrite = false;
+      viewer.mesh.material.colorWrite = false;
       r.render(scene, camera);
-      viewer3D.mesh.material.colorWrite = true;
+      viewer.mesh.material.colorWrite = true;
 
-      viewer3D.mesh.visible = false;
+      viewer.mesh.visible = false;
       r.render(scene, camera);
 
-      viewer3D.mesh.visible = true;
+      viewer.mesh.visible = true;
       r.autoClear = true;
       r.shadowMap.autoUpdate = true;
     }
@@ -677,19 +520,22 @@ function renderViewerPipeline(background) {
   scene.background = savedBg;
 }
 
-function loadModelToViewer(vertices, faces, faceColors) {
-  if (!viewer3D.scene) return;
+/**
+ * Load a model into an AO viewer.
+ */
+function loadModelToAOViewer(viewer, vertices, faces, faceColors) {
+  if (!viewer.scene) return;
 
   // Store for raycasting
-  viewer3D.vertices = vertices;
-  viewer3D.faces = faces;
+  viewer.vertices = vertices;
+  viewer.faces = faces;
 
   // Remove existing mesh
-  if (viewer3D.mesh) {
-    viewer3D.scene.remove(viewer3D.mesh);
-    viewer3D.mesh.geometry.dispose();
-    viewer3D.mesh.material.dispose();
-    viewer3D.mesh = null;
+  if (viewer.mesh) {
+    viewer.scene.remove(viewer.mesh);
+    viewer.mesh.geometry.dispose();
+    viewer.mesh.material.dispose();
+    viewer.mesh = null;
   }
 
   // Create geometry
@@ -702,9 +548,7 @@ function loadModelToViewer(vertices, faces, faceColors) {
 
   for (let fIdx = 0; fIdx < faces.length; fIdx++) {
     const face = faces[fIdx];
-    // Support both formats: face.vertices (from parser) or face as array
     const faceIndices = face.vertices || face;
-    // Use per-face color if available (3MF), otherwise fall back to vertex colors
     const fColor = faceColors ? faceColors[fIdx] : null;
 
     // Fan triangulation for faces with more than 3 vertices
@@ -722,8 +566,7 @@ function loadModelToViewer(vertices, faces, faceColors) {
       positions.push(v1.x, v1.y, v1.z);
       positions.push(v2.x, v2.y, v2.z);
 
-      // Colors - use per-face color when available for accurate 3MF display
-      // Lift pure black to dark gray so lighting/AO can still produce visible shading
+      // Colors - lift pure black to dark gray for visible shading
       const MIN_C = 0.12;
       if (fColor) {
         trueColors.push(fColor.r, fColor.g, fColor.b);
@@ -758,24 +601,24 @@ function loadModelToViewer(vertices, faces, faceColors) {
     side: THREE.DoubleSide
   });
 
-  viewer3D.mesh = new THREE.Mesh(geometry, material);
-  viewer3D.mesh.castShadow = true;
+  viewer.mesh = new THREE.Mesh(geometry, material);
+  viewer.mesh.castShadow = true;
 
-  // Rotate -90° on X to convert Z-up (3MF/STL) to Y-up (Three.js)
-  viewer3D.mesh.rotation.x = -Math.PI / 2;
+  // Rotate -90deg on X to convert Z-up (3MF/STL) to Y-up (Three.js)
+  viewer.mesh.rotation.x = -Math.PI / 2;
 
-  viewer3D.scene.add(viewer3D.mesh);
+  viewer.scene.add(viewer.mesh);
 
   // Remove previous shadow ground
-  if (viewer3D.groundPlane) {
-    viewer3D.scene.remove(viewer3D.groundPlane);
-    viewer3D.groundPlane.geometry.dispose();
-    viewer3D.groundPlane.material.dispose();
-    viewer3D.groundPlane = null;
+  if (viewer.groundPlane) {
+    viewer.scene.remove(viewer.groundPlane);
+    viewer.groundPlane.geometry.dispose();
+    viewer.groundPlane.material.dispose();
+    viewer.groundPlane = null;
   }
 
   // Add shadow ground plane beneath the model
-  const box = new THREE.Box3().setFromObject(viewer3D.mesh);
+  const box = new THREE.Box3().setFromObject(viewer.mesh);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
@@ -786,147 +629,485 @@ function loadModelToViewer(vertices, faces, faceColors) {
   const groundMat = new THREE.ShadowMaterial({
     opacity: (savedOpacity && savedOpacity.shadowOpacity != null) ? savedOpacity.shadowOpacity : 0.12,
   });
-  viewer3D.groundPlane = new THREE.Mesh(groundGeo, groundMat);
-  viewer3D.groundPlane.rotation.x = -Math.PI / 2;
-  viewer3D.groundPlane.position.set(center.x, box.min.y, center.z);
-  viewer3D.groundPlane.receiveShadow = true;
-  viewer3D.groundPlane.renderOrder = 0; // Render after the mesh to ensure it appears on top
-  viewer3D.scene.add(viewer3D.groundPlane);
+  viewer.groundPlane = new THREE.Mesh(groundGeo, groundMat);
+  viewer.groundPlane.rotation.x = -Math.PI / 2;
+  viewer.groundPlane.position.set(center.x, box.min.y, center.z);
+  viewer.groundPlane.receiveShadow = true;
+  viewer.groundPlane.renderOrder = 0;
+  viewer.scene.add(viewer.groundPlane);
 
-  // Update shadow light: almost directly above for a soft contact shadow
-  if (viewer3D.directionalLight) {
-    viewer3D.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
-    viewer3D.directionalLight.target.position.copy(center);
-    viewer3D.scene.add(viewer3D.directionalLight.target);
-    // Very wide frustum + low-res shadow map = very blurry shadow
-    viewer3D.shadowBaseSpread = maxDim;
+  // Update shadow light
+  if (viewer.directionalLight) {
+    viewer.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
+    viewer.directionalLight.target.position.copy(center);
+    viewer.scene.add(viewer.directionalLight.target);
+    viewer.shadowBaseSpread = maxDim;
     const spreadSlider = document.getElementById('shadowSpreadSlider');
     const spreadScale = spreadSlider ? parseFloat(spreadSlider.value) / 100 : 1.0;
     const s = maxDim * 6 * spreadScale;
-    viewer3D.directionalLight.shadow.camera.left = -s;
-    viewer3D.directionalLight.shadow.camera.right = s;
-    viewer3D.directionalLight.shadow.camera.top = s;
-    viewer3D.directionalLight.shadow.camera.bottom = -s;
-    viewer3D.directionalLight.shadow.camera.far = maxDim * 10;
-    viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+    viewer.directionalLight.shadow.camera.left = -s;
+    viewer.directionalLight.shadow.camera.right = s;
+    viewer.directionalLight.shadow.camera.top = s;
+    viewer.directionalLight.shadow.camera.bottom = -s;
+    viewer.directionalLight.shadow.camera.far = maxDim * 10;
+    viewer.directionalLight.shadow.camera.updateProjectionMatrix();
   }
 
-  // Auto-fit camera to bounds
-  fitCameraToObject(viewer3D.mesh);
+  // Auto-fit camera
+  const savedState = loadCameraState();
+  fitCameraToAOViewer(viewer, viewer.mesh, savedState);
 
-  // Show viewer card
-  const viewerCard = document.getElementById('viewerCard');
-  if (viewerCard) {
-    viewerCard.style.display = 'block';
-  }
-
-  // Show picked palette card
-  const pickedPaletteCard = document.getElementById('pickedPaletteCard');
-  if (pickedPaletteCard) {
-    pickedPaletteCard.style.display = 'block';
-  }
-
+  // Trigger resize
   requestAnimationFrame(() => {
-    onViewerResize();
+    resizeAOViewer(viewer);
   });
 }
 
-function updateGroundAndShadow() {
-  if (!viewer3D.mesh || !viewer3D.groundPlane) return;
+/**
+ * Update ground plane and shadow light for a viewer after rotation.
+ */
+function updateGroundAndShadowForViewer(viewer) {
+  if (!viewer.mesh || !viewer.groundPlane) return;
 
-  const box = new THREE.Box3().setFromObject(viewer3D.mesh);
+  const box = new THREE.Box3().setFromObject(viewer.mesh);
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const maxDim = Math.max(size.x, size.y, size.z);
 
   // Reposition ground plane at the bottom of the rotated model
-  viewer3D.groundPlane.position.set(center.x, box.min.y, center.z);
+  viewer.groundPlane.position.set(center.x, box.min.y, center.z);
   const groundSize = maxDim * 4;
-  viewer3D.groundPlane.geometry.dispose();
-  viewer3D.groundPlane.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
+  viewer.groundPlane.geometry.dispose();
+  viewer.groundPlane.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
 
   // Update shadow light
-  if (viewer3D.directionalLight) {
-    viewer3D.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
-    viewer3D.directionalLight.target.position.copy(center);
+  if (viewer.directionalLight) {
+    viewer.directionalLight.position.set(center.x, center.y + maxDim * 4, center.z + maxDim * 0.5);
+    viewer.directionalLight.target.position.copy(center);
 
-    viewer3D.shadowBaseSpread = maxDim;
+    viewer.shadowBaseSpread = maxDim;
     const spreadSlider = document.getElementById('shadowSpreadSlider');
     const spreadScale = spreadSlider ? parseFloat(spreadSlider.value) / 100 : 1.0;
     const s = maxDim * 6 * spreadScale;
-    viewer3D.directionalLight.shadow.camera.left = -s;
-    viewer3D.directionalLight.shadow.camera.right = s;
-    viewer3D.directionalLight.shadow.camera.top = s;
-    viewer3D.directionalLight.shadow.camera.bottom = -s;
-    viewer3D.directionalLight.shadow.camera.far = maxDim * 10;
-    viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+    viewer.directionalLight.shadow.camera.left = -s;
+    viewer.directionalLight.shadow.camera.right = s;
+    viewer.directionalLight.shadow.camera.top = s;
+    viewer.directionalLight.shadow.camera.bottom = -s;
+    viewer.directionalLight.shadow.camera.far = maxDim * 10;
+    viewer.directionalLight.shadow.camera.updateProjectionMatrix();
   }
 
-  // Recenter camera & controls on new bounds, preserving current viewing direction
-  const fov = viewer3D.camera.fov * (Math.PI / 180);
+  // Recenter camera & controls, preserving current viewing direction
+  const fov = viewer.camera.fov * (Math.PI / 180);
   let fitDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
-  cameraFitDistance = fitDist;
-  viewer3D.camera.far = fitDist * 20;
-  viewer3D.camera.updateProjectionMatrix();
+  if (viewer === viewer3D) cameraFitDistance = fitDist;
+  viewer.camera.far = fitDist * 20;
+  viewer.camera.updateProjectionMatrix();
 
-  // Keep current camera direction, just recenter on new bounds
-  const offset = viewer3D.camera.position.clone().sub(viewer3D.controls.target).normalize().multiplyScalar(fitDist);
-  viewer3D.controls.target.copy(center);
-  viewer3D.camera.position.copy(center).add(offset);
-  viewer3D.camera.lookAt(center);
-  viewer3D.controls.update();
+  const offset = viewer.camera.position.clone().sub(viewer.controls.target).normalize().multiplyScalar(fitDist);
+  viewer.controls.target.copy(center);
+  viewer.camera.position.copy(center).add(offset);
+  viewer.camera.lookAt(center);
+  viewer.controls.update();
 }
 
-function fitCameraToObject(object) {
+/**
+ * Fit camera to object bounds for an AO viewer.
+ */
+function fitCameraToAOViewer(viewer, object, savedState) {
   const box = new THREE.Box3().setFromObject(object);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
 
   const maxDim = Math.max(size.x, size.y, size.z);
-  const fov = viewer3D.camera.fov * (Math.PI / 180);
+  const fov = viewer.camera.fov * (Math.PI / 180);
   let fitDist = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
 
-  cameraFitDistance = fitDist;
+  if (viewer === viewer3D) cameraFitDistance = fitDist;
 
-  viewer3D.camera.far = fitDist * 20;
-  viewer3D.camera.updateProjectionMatrix();
+  viewer.camera.far = fitDist * 20;
+  viewer.camera.updateProjectionMatrix();
 
-  viewer3D.controls.target.copy(center);
+  viewer.controls.target.copy(center);
 
   // Restore saved camera orientation, or use default (front view)
-  const saved = loadCameraState();
-  if (saved) {
-    const dist = fitDist * (saved.distRatio || 1);
-    const phi = saved.polar;   // polar angle (from Y-up)
-    const theta = saved.azimuth; // azimuthal angle (around Y)
-    viewer3D.camera.position.set(
+  if (savedState) {
+    const dist = fitDist * (savedState.distRatio || 1);
+    const phi = savedState.polar;
+    const theta = savedState.azimuth;
+    viewer.camera.position.set(
       center.x + dist * Math.sin(phi) * Math.sin(theta),
       center.y + dist * Math.cos(phi),
       center.z + dist * Math.sin(phi) * Math.cos(theta),
     );
   } else {
-    viewer3D.camera.position.set(center.x, center.y, center.z + fitDist);
+    viewer.camera.position.set(center.x, center.y, center.z + fitDist);
   }
 
-  viewer3D.camera.lookAt(center);
-  viewer3D.controls.update();
+  viewer.camera.lookAt(center);
+  viewer.controls.update();
+}
+
+/**
+ * Resize handler for an AO viewer.
+ */
+function resizeAOViewer(viewer) {
+  if (!viewer.container || !viewer.camera || !viewer.renderer) return;
+
+  const width = viewer.container.clientWidth;
+  const height = viewer.container.clientHeight;
+
+  viewer.camera.aspect = width / height;
+  viewer.camera.updateProjectionMatrix();
+  viewer.renderer.setSize(width, height);
+
+  const ssW = width * 2, ssH = height * 2;
+  if (viewer.beautyRT) viewer.beautyRT.setSize(ssW, ssH);
+  if (viewer.aoRT) viewer.aoRT.setSize(ssW, ssH);
+  if (viewer.shadowRT) viewer.shadowRT.setSize(ssW, ssH);
+  if (viewer.aoMaterial) viewer.aoMaterial.uniforms.resolution.value.set(ssW, ssH);
+  if (viewer.fxaaMaterial) viewer.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
+}
+
+/**
+ * Clear mesh and ground plane from an AO viewer.
+ */
+function clearAOViewer(viewer) {
+  if (viewer.mesh && viewer.scene) {
+    viewer.scene.remove(viewer.mesh);
+    viewer.mesh.geometry.dispose();
+    viewer.mesh.material.dispose();
+    viewer.mesh = null;
+  }
+  if (viewer.groundPlane && viewer.scene) {
+    viewer.scene.remove(viewer.groundPlane);
+    viewer.groundPlane.geometry.dispose();
+    viewer.groundPlane.material.dispose();
+    viewer.groundPlane = null;
+  }
+  viewer.vertices = null;
+  viewer.faces = null;
+}
+
+/**
+ * Sync current slider settings to a viewer's AO material, ground plane, and shadow.
+ */
+function syncSettingsToViewer(viewer) {
+  if (!viewer.aoMaterial) return;
+
+  const aoSlider = document.getElementById('aoStrengthSlider');
+  const brightnessSlider = document.getElementById('brightnessSlider');
+  const contrastSlider = document.getElementById('contrastSlider');
+  const saturationSlider = document.getElementById('saturationSlider');
+  const temperatureSlider = document.getElementById('temperatureSlider');
+
+  if (aoSlider) viewer.aoMaterial.uniforms.aoStrength.value = parseFloat(aoSlider.value);
+  if (brightnessSlider) viewer.aoMaterial.uniforms.brightness.value = parseFloat(brightnessSlider.value);
+  if (contrastSlider) viewer.aoMaterial.uniforms.contrast.value = parseFloat(contrastSlider.value);
+  if (saturationSlider) viewer.aoMaterial.uniforms.saturation.value = parseFloat(saturationSlider.value);
+  if (temperatureSlider) viewer.aoMaterial.uniforms.temperature.value = parseFloat(temperatureSlider.value);
+
+  // Sync AO/shadow enabled state from main viewer
+  viewer.aoEnabled = viewer3D.aoEnabled;
+  viewer.shadowEnabled = viewer3D.shadowEnabled;
+
+  // Sync ground plane opacity
+  if (viewer.groundPlane) {
+    const opacitySlider = document.getElementById('shadowOpacitySlider');
+    if (opacitySlider) viewer.groundPlane.material.opacity = parseFloat(opacitySlider.value);
+  }
+
+  // Sync shadow spread
+  if (viewer.directionalLight && viewer.shadowBaseSpread) {
+    const spreadSlider = document.getElementById('shadowSpreadSlider');
+    if (spreadSlider) {
+      const val = Math.max(parseFloat(spreadSlider.value), 10);
+      const s = viewer.shadowBaseSpread * 6 * (val / 100);
+      viewer.directionalLight.shadow.camera.left = -s;
+      viewer.directionalLight.shadow.camera.right = s;
+      viewer.directionalLight.shadow.camera.top = s;
+      viewer.directionalLight.shadow.camera.bottom = -s;
+      viewer.directionalLight.shadow.camera.updateProjectionMatrix();
+    }
+  }
+}
+
+// ============================================================================
+// Main Viewer (Viewer Tab)
+// ============================================================================
+
+function initViewer3D(containerId) {
+  if (!setupAOPipeline(viewer3D, containerId, { preserveDrawingBuffer: true, saveCameraOnChange: true })) {
+    return false;
+  }
+
+  // Restore saved viewer settings
+  const savedSettings = loadViewerSettings();
+
+  // AO toggle button
+  viewer3D.aoEnabled = savedSettings ? savedSettings.aoEnabled : true;
+  processViewer3D.aoEnabled = viewer3D.aoEnabled;
+  const toggleAoBtn = document.getElementById('toggleAoBtn');
+  if (toggleAoBtn) {
+    toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
+    toggleAoBtn.addEventListener('click', () => {
+      viewer3D.aoEnabled = !viewer3D.aoEnabled;
+      processViewer3D.aoEnabled = viewer3D.aoEnabled;
+      toggleAoBtn.classList.toggle('active', viewer3D.aoEnabled);
+      saveViewerSettings();
+    });
+  }
+
+  // Shadow toggle button
+  viewer3D.shadowEnabled = savedSettings ? savedSettings.shadowEnabled : true;
+  processViewer3D.shadowEnabled = viewer3D.shadowEnabled;
+  const toggleShadowBtn = document.getElementById('toggleShadowBtn');
+  if (toggleShadowBtn) {
+    toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
+    toggleShadowBtn.addEventListener('click', () => {
+      viewer3D.shadowEnabled = !viewer3D.shadowEnabled;
+      processViewer3D.shadowEnabled = viewer3D.shadowEnabled;
+      toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
+      saveViewerSettings();
+    });
+  }
+
+  // Settings panel toggle
+  const toggleSettingsBtn = document.getElementById('toggleSettingsBtn');
+  const settingsPanel = document.getElementById('viewerSettings');
+  if (toggleSettingsBtn && settingsPanel) {
+    toggleSettingsBtn.addEventListener('click', () => {
+      settingsPanel.classList.toggle('show');
+      toggleSettingsBtn.classList.toggle('active', settingsPanel.classList.contains('show'));
+    });
+  }
+
+  // AO Strength slider
+  const aoStrengthSlider = document.getElementById('aoStrengthSlider');
+  const aoStrengthValue = document.getElementById('aoStrengthValue');
+  if (aoStrengthSlider) {
+    if (savedSettings && savedSettings.aoStrength != null) {
+      aoStrengthSlider.value = savedSettings.aoStrength;
+      aoStrengthValue.textContent = savedSettings.aoStrength.toFixed(2);
+      viewer3D.aoMaterial.uniforms.aoStrength.value = savedSettings.aoStrength;
+    }
+    aoStrengthSlider.addEventListener('input', () => {
+      const val = parseFloat(aoStrengthSlider.value);
+      viewer3D.aoMaterial.uniforms.aoStrength.value = val;
+      if (processViewer3D.aoMaterial) processViewer3D.aoMaterial.uniforms.aoStrength.value = val;
+      aoStrengthValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Shadow Opacity slider
+  const shadowOpacitySlider = document.getElementById('shadowOpacitySlider');
+  const shadowOpacityValue = document.getElementById('shadowOpacityValue');
+  if (shadowOpacitySlider) {
+    if (savedSettings && savedSettings.shadowOpacity != null) {
+      shadowOpacitySlider.value = savedSettings.shadowOpacity;
+      shadowOpacityValue.textContent = savedSettings.shadowOpacity.toFixed(2);
+    }
+    shadowOpacitySlider.addEventListener('input', () => {
+      const val = parseFloat(shadowOpacitySlider.value);
+      if (viewer3D.groundPlane) viewer3D.groundPlane.material.opacity = val;
+      if (processViewer3D.groundPlane) processViewer3D.groundPlane.material.opacity = val;
+      shadowOpacityValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Shadow Spread slider
+  const shadowSpreadSlider = document.getElementById('shadowSpreadSlider');
+  const shadowSpreadValue = document.getElementById('shadowSpreadValue');
+  if (shadowSpreadSlider) {
+    if (savedSettings && savedSettings.shadowSpread != null) {
+      shadowSpreadSlider.value = savedSettings.shadowSpread;
+      shadowSpreadValue.textContent = savedSettings.shadowSpread;
+    }
+    shadowSpreadSlider.addEventListener('input', () => {
+      let val = parseFloat(shadowSpreadSlider.value);
+      val = Math.max(val, 10);
+      if (viewer3D.directionalLight && viewer3D.shadowBaseSpread) {
+        const s = viewer3D.shadowBaseSpread * 6 * (val / 100);
+        viewer3D.directionalLight.shadow.camera.left = -s;
+        viewer3D.directionalLight.shadow.camera.right = s;
+        viewer3D.directionalLight.shadow.camera.top = s;
+        viewer3D.directionalLight.shadow.camera.bottom = -s;
+        viewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+      }
+      if (processViewer3D.directionalLight && processViewer3D.shadowBaseSpread) {
+        const s = processViewer3D.shadowBaseSpread * 6 * (val / 100);
+        processViewer3D.directionalLight.shadow.camera.left = -s;
+        processViewer3D.directionalLight.shadow.camera.right = s;
+        processViewer3D.directionalLight.shadow.camera.top = s;
+        processViewer3D.directionalLight.shadow.camera.bottom = -s;
+        processViewer3D.directionalLight.shadow.camera.updateProjectionMatrix();
+      }
+      shadowSpreadValue.textContent = val;
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Brightness slider
+  const brightnessSlider = document.getElementById('brightnessSlider');
+  const brightnessValue = document.getElementById('brightnessValue');
+  if (brightnessSlider) {
+    if (savedSettings && savedSettings.brightness != null) {
+      brightnessSlider.value = savedSettings.brightness;
+      brightnessValue.textContent = savedSettings.brightness.toFixed(2);
+      viewer3D.aoMaterial.uniforms.brightness.value = savedSettings.brightness;
+    }
+    brightnessSlider.addEventListener('input', () => {
+      const val = parseFloat(brightnessSlider.value);
+      viewer3D.aoMaterial.uniforms.brightness.value = val;
+      if (processViewer3D.aoMaterial) processViewer3D.aoMaterial.uniforms.brightness.value = val;
+      brightnessValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Contrast slider
+  const contrastSlider = document.getElementById('contrastSlider');
+  const contrastValue = document.getElementById('contrastValue');
+  if (contrastSlider) {
+    if (savedSettings && savedSettings.contrast != null) {
+      contrastSlider.value = savedSettings.contrast;
+      contrastValue.textContent = savedSettings.contrast.toFixed(2);
+      viewer3D.aoMaterial.uniforms.contrast.value = savedSettings.contrast;
+    }
+    contrastSlider.addEventListener('input', () => {
+      const val = parseFloat(contrastSlider.value);
+      viewer3D.aoMaterial.uniforms.contrast.value = val;
+      if (processViewer3D.aoMaterial) processViewer3D.aoMaterial.uniforms.contrast.value = val;
+      contrastValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Saturation slider
+  const saturationSlider = document.getElementById('saturationSlider');
+  const saturationValue = document.getElementById('saturationValue');
+  if (saturationSlider) {
+    if (savedSettings && savedSettings.saturation != null) {
+      saturationSlider.value = savedSettings.saturation;
+      saturationValue.textContent = savedSettings.saturation.toFixed(2);
+      viewer3D.aoMaterial.uniforms.saturation.value = savedSettings.saturation;
+    }
+    saturationSlider.addEventListener('input', () => {
+      const val = parseFloat(saturationSlider.value);
+      viewer3D.aoMaterial.uniforms.saturation.value = val;
+      if (processViewer3D.aoMaterial) processViewer3D.aoMaterial.uniforms.saturation.value = val;
+      saturationValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Temperature slider
+  const temperatureSlider = document.getElementById('temperatureSlider');
+  const temperatureValue = document.getElementById('temperatureValue');
+  if (temperatureSlider) {
+    if (savedSettings && savedSettings.temperature != null) {
+      temperatureSlider.value = savedSettings.temperature;
+      temperatureValue.textContent = savedSettings.temperature.toFixed(2);
+      viewer3D.aoMaterial.uniforms.temperature.value = savedSettings.temperature;
+    }
+    temperatureSlider.addEventListener('input', () => {
+      const val = parseFloat(temperatureSlider.value);
+      viewer3D.aoMaterial.uniforms.temperature.value = val;
+      if (processViewer3D.aoMaterial) processViewer3D.aoMaterial.uniforms.temperature.value = val;
+      temperatureValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // Rotation buttons (affect both viewers)
+  const halfPi = Math.PI / 2;
+  document.getElementById('rotateX')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.x += halfPi;
+    updateGroundAndShadowForViewer(viewer3D);
+    if (processViewer3D.mesh) {
+      processViewer3D.mesh.rotation.x += halfPi;
+      updateGroundAndShadowForViewer(processViewer3D);
+    }
+  });
+  document.getElementById('rotateY')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.y += halfPi;
+    updateGroundAndShadowForViewer(viewer3D);
+    if (processViewer3D.mesh) {
+      processViewer3D.mesh.rotation.y += halfPi;
+      updateGroundAndShadowForViewer(processViewer3D);
+    }
+  });
+  document.getElementById('rotateZ')?.addEventListener('click', () => {
+    if (!viewer3D.mesh) return;
+    viewer3D.mesh.rotation.z += halfPi;
+    updateGroundAndShadowForViewer(viewer3D);
+    if (processViewer3D.mesh) {
+      processViewer3D.mesh.rotation.z += halfPi;
+      updateGroundAndShadowForViewer(processViewer3D);
+    }
+  });
+
+  // Handle resize
+  window.addEventListener('resize', onViewerResize);
+
+  // Start animation loop
+  animate();
+
+  return true;
+}
+
+function animate() {
+  viewer3D.animationId = requestAnimationFrame(animate);
+
+  // Skip rendering when viewer tab is not active
+  if (typeof activeTab !== 'undefined' && activeTab !== 'viewer') return;
+
+  if (viewer3D.controls) {
+    viewer3D.controls.update();
+  }
+
+  if (viewer3D.beautyRT && viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
+    renderAOPipeline(viewer3D, viewer3D.scene.background);
+  } else if (viewer3D.renderer && viewer3D.scene && viewer3D.camera) {
+    viewer3D.renderer.render(viewer3D.scene, viewer3D.camera);
+  }
+}
+
+function onViewerResize() {
+  resizeAOViewer(viewer3D);
+}
+
+function loadModelToViewer(vertices, faces, faceColors) {
+  loadModelToAOViewer(viewer3D, vertices, faces, faceColors);
+
+  // Show tab bar and switch to viewer tab
+  const tabBar = document.getElementById('tabBar');
+  if (tabBar) tabBar.style.display = '';
+  switchTab('viewer');
+
+  // Show viewer card
+  const viewerCard = document.getElementById('viewerCard');
+  if (viewerCard) viewerCard.style.display = 'block';
+}
+
+function updateGroundAndShadow() {
+  updateGroundAndShadowForViewer(viewer3D);
+  if (processViewer3D.mesh) {
+    updateGroundAndShadowForViewer(processViewer3D);
+  }
+}
+
+function fitCameraToObject(object) {
+  const saved = loadCameraState();
+  fitCameraToAOViewer(viewer3D, object, saved);
 }
 
 function clearViewer() {
-  if (viewer3D.mesh && viewer3D.scene) {
-    viewer3D.scene.remove(viewer3D.mesh);
-    viewer3D.mesh.geometry.dispose();
-    viewer3D.mesh.material.dispose();
-    viewer3D.mesh = null;
-  }
-  if (viewer3D.groundPlane && viewer3D.scene) {
-    viewer3D.scene.remove(viewer3D.groundPlane);
-    viewer3D.groundPlane.geometry.dispose();
-    viewer3D.groundPlane.material.dispose();
-    viewer3D.groundPlane = null;
-  }
-  viewer3D.vertices = null;
-  viewer3D.faces = null;
+  clearAOViewer(viewer3D);
 }
 
 function getViewerMesh() {
@@ -952,7 +1133,7 @@ function exportViewerPNG(baseName) {
   if (!viewer3D.renderer || !viewer3D.scene || !viewer3D.camera) return;
 
   // Render full pipeline with transparent background
-  renderViewerPipeline(null);
+  renderAOPipeline(viewer3D, null);
 
   // Capture from canvas
   const dataURL = viewer3D.renderer.domElement.toDataURL('image/png');
@@ -960,6 +1141,79 @@ function exportViewerPNG(baseName) {
   a.href = dataURL;
   a.download = `${baseName}.png`;
   a.click();
+}
+
+// ============================================================================
+// Process Viewer (Process Tab)
+// ============================================================================
+
+function initProcessViewer3D(containerId) {
+  if (!setupAOPipeline(processViewer3D, containerId, {})) {
+    return false;
+  }
+
+  // Sync settings from current slider values
+  syncSettingsToViewer(processViewer3D);
+
+  // Handle resize
+  window.addEventListener('resize', onProcessViewerResize);
+
+  // Start animation loop
+  animateProcessViewer();
+
+  return true;
+}
+
+function animateProcessViewer() {
+  processViewer3D.animationId = requestAnimationFrame(animateProcessViewer);
+
+  // Skip rendering when process tab is not active
+  if (typeof activeTab !== 'undefined' && activeTab !== 'process') return;
+
+  if (processViewer3D.controls) {
+    processViewer3D.controls.update();
+  }
+
+  if (processViewer3D.beautyRT && processViewer3D.renderer && processViewer3D.scene && processViewer3D.camera) {
+    renderAOPipeline(processViewer3D, processViewer3D.scene.background);
+  } else if (processViewer3D.renderer && processViewer3D.scene && processViewer3D.camera) {
+    processViewer3D.renderer.render(processViewer3D.scene, processViewer3D.camera);
+  }
+}
+
+function onProcessViewerResize() {
+  resizeAOViewer(processViewer3D);
+}
+
+function loadModelToProcessViewer(vertices, faces, faceColors) {
+  loadModelToAOViewer(processViewer3D, vertices, faces, faceColors);
+
+  // Sync settings after model load (for ground plane opacity, shadow spread, etc.)
+  syncSettingsToViewer(processViewer3D);
+
+  // Show process viewer card
+  const processViewerCard = document.getElementById('processViewerCard');
+  if (processViewerCard) processViewerCard.style.display = 'block';
+
+  // Show picked palette card
+  const pickedPaletteCard = document.getElementById('pickedPaletteCard');
+  if (pickedPaletteCard) pickedPaletteCard.style.display = 'block';
+}
+
+function clearProcessViewer() {
+  clearAOViewer(processViewer3D);
+}
+
+function getProcessViewerMesh() {
+  return processViewer3D.mesh;
+}
+
+function getProcessViewerRenderer() {
+  return processViewer3D.renderer;
+}
+
+function getProcessViewerCamera() {
+  return processViewer3D.camera;
 }
 
 // ============================================================================
@@ -1038,6 +1292,9 @@ function onResultViewerResize() {
 
 function animateResultViewer() {
   resultViewer3D.animationId = requestAnimationFrame(animateResultViewer);
+
+  // Skip rendering when process tab is not active
+  if (typeof activeTab !== 'undefined' && activeTab !== 'process') return;
 
   if (resultViewer3D.controls) {
     resultViewer3D.controls.update();
@@ -1195,14 +1452,14 @@ function highlightResultColor(targetColor) {
 
         if (isMatch) {
           // Brighten matched color
-          colors[colorIndex] = 1;//Math.min(1, vc.r * 1.3 + 0.2);
-          colors[colorIndex + 1] = 1;//Math.min(1, vc.g * 1.3 + 0.2);
-          colors[colorIndex + 2] = 1;//Math.min(1, vc.b * 1.3 + 0.2);
+          colors[colorIndex] = 1;
+          colors[colorIndex + 1] = 1;
+          colors[colorIndex + 2] = 1;
         } else {
           // Dim non-matched colors
-          colors[colorIndex] = 0;//vc.r * 0.1;
-          colors[colorIndex + 1] = 0;//vc.g * 0.1;
-          colors[colorIndex + 2] = 0;//vc.b * 0.1;
+          colors[colorIndex] = 0;
+          colors[colorIndex + 1] = 0;
+          colors[colorIndex + 2] = 0;
         }
 
         colorIndex += 3;

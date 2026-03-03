@@ -15,7 +15,7 @@ function initColorPicker() {
   colorPickerRaycaster = new THREE.Raycaster();
   colorPickerMouse = new THREE.Vector2();
 
-  const renderer = getViewerRenderer();
+  const renderer = getProcessViewerRenderer();
   if (renderer && renderer.domElement) {
     renderer.domElement.addEventListener('pointerdown', onViewerMouseDown);
     renderer.domElement.addEventListener('click', onViewerClick);
@@ -39,9 +39,9 @@ function onViewerClick(event) {
     return; // It was a drag, not a click
   }
 
-  const renderer = getViewerRenderer();
-  const camera = getViewerCamera();
-  const mesh = getViewerMesh();
+  const renderer = getProcessViewerRenderer();
+  const camera = getProcessViewerCamera();
+  const mesh = getProcessViewerMesh();
 
   if (!renderer || !camera || !mesh) return;
 
@@ -71,7 +71,7 @@ function onViewerClick(event) {
 }
 
 function extractColorFromIntersection(intersection) {
-  const mesh = getViewerMesh();
+  const mesh = getProcessViewerMesh();
   if (!mesh) return null;
 
   const geometry = mesh.geometry;
