@@ -2,6 +2,205 @@
 // 3MF Parser
 // ============================================================================
 
+// ============================================================================
+// MMU Segmentation tree decoder (PrusaSlicer / Bambu Studio)
+// ============================================================================
+
+/**
+ * Get the mmu_segmentation attribute from a triangle element.
+ * Handles namespace variations.
+ */
+function getMmuSegmentationAttr(triangle) {
+  let val = triangle.getAttribute('slic3rpe:mmu_segmentation');
+  if (!val) val = triangle.getAttributeNS('http://schemas.slic3r.org/3mf/2017/06', 'mmu_segmentation');
+  if (!val) val = triangle.getAttribute('paint_color');
+  if (!val) {
+    for (let a = 0; a < triangle.attributes.length; a++) {
+      const attr = triangle.attributes[a];
+      if (attr.localName === 'mmu_segmentation') { val = attr.value; break; }
+    }
+  }
+  return val || '';
+}
+
+/**
+ * Expand a triangle with mmu_segmentation subdivision data into sub-triangles.
+ *
+ * PrusaSlicer encoding: hex string is REVERSED. Each nibble (4 bits) encodes:
+ *   - Low 2 bits: number of split sides (0=leaf, 1-3=split with 2-4 children)
+ *   - High 2 bits: for leaves = state (0-2), for splits = special side index
+ *   - If leaf high bits = 3: extended state, next nibble + 3
+ *
+ * State mapping: 0=unpainted (default), 1+=extruder index (1-based)
+ *
+ * Split types create midpoint vertices on edges:
+ *   - 3 split sides (4 children): full quad subdivision (midpoints on all 3 edges)
+ *   - 1 split side (2 children): bisect on one edge
+ *   - 2 split sides (3 children): split on two edges
+ */
+function expandMmuTriangle(vi0, vi1, vi2, hexStr, vertices, colorMap, objColor) {
+  // Read nibbles right-to-left (reversed encoding)
+  const nibbles = [];
+  for (let i = hexStr.length - 1; i >= 0; i--) {
+    nibbles.push(parseInt(hexStr[i], 16));
+  }
+
+  const newFaces = [];
+  const newFaceColors = [];
+  let pos = 0;
+
+  // Cache midpoint vertices to avoid duplicates
+  const midCache = new Map();
+  function midpoint(a, b) {
+    const key = Math.min(a, b) + '_' + Math.max(a, b);
+    if (midCache.has(key)) return midCache.get(key);
+    const va = vertices[a], vb = vertices[b];
+    const mid = {
+      x: (va.x + vb.x) / 2, y: (va.y + vb.y) / 2, z: (va.z + vb.z) / 2,
+      color: objColor ? objColor.clone() : new Color(0.8, 0.8, 0.8, 'default')
+    };
+    const idx = vertices.length;
+    vertices.push(mid);
+    midCache.set(key, idx);
+    return idx;
+  }
+
+  function stateToColor(state) {
+    if (state === 0) return objColor || new Color(0.8, 0.8, 0.8, 'default');
+    // State N (1-based) → extruder N → colorMap[N-1] (0-based)
+    const extIdx = state - 1;
+    return colorMap.get(extIdx) || objColor || new Color(0.8, 0.8, 0.8, 'default');
+  }
+
+  function walk(i0, i1, i2, depth) {
+    if (pos >= nibbles.length || depth > 12) {
+      // Fallback: treat as unpainted leaf
+      newFaces.push([i0, i1, i2]);
+      newFaceColors.push(objColor || new Color(0.8, 0.8, 0.8, 'default'));
+      return;
+    }
+
+    const nib = nibbles[pos++];
+    const splitSides = nib & 3;
+    const high = (nib >> 2) & 3;
+
+    if (splitSides === 0) {
+      // Leaf node
+      let state;
+      if (high < 3) {
+        state = high;
+      } else {
+        // Extended state
+        state = (pos < nibbles.length) ? nibbles[pos++] + 3 : 0;
+      }
+      const color = stateToColor(state);
+      newFaces.push([i0, i1, i2]);
+      newFaceColors.push(color);
+    } else if (splitSides === 3) {
+      // Quad split: 4 children. Stream order is reversed: child[3], child[2], child[1], child[0]
+      const m01 = midpoint(i0, i1);
+      const m12 = midpoint(i1, i2);
+      const m20 = midpoint(i2, i0);
+      walk(m01, m12, m20, depth + 1);  // child[3] = center (1st in stream)
+      walk(m12, i2, m20, depth + 1);   // child[2] = corner v2
+      walk(m01, i1, m12, depth + 1);   // child[1] = corner v1
+      walk(i0, m01, m20, depth + 1);   // child[0] = corner v0 (last in stream)
+    } else if (splitSides === 1) {
+      // 1 split side (2 children). special_side (high) determines which edge to split.
+      // After vertex rotation by special_side, midpoint is always on edge v1-v2.
+      // Stream order is reversed: child[1] first, child[0] second.
+      if (high === 0) {
+        // special_side=0: split edge i1-i2
+        const m = midpoint(i1, i2);
+        walk(m, i2, i0, depth + 1);    // child[1]
+        walk(i0, i1, m, depth + 1);    // child[0]
+      } else if (high === 1) {
+        // special_side=1: split edge i2-i0
+        const m = midpoint(i2, i0);
+        walk(m, i0, i1, depth + 1);    // child[1]
+        walk(i1, i2, m, depth + 1);    // child[0]
+      } else {
+        // special_side=2: split edge i0-i1
+        const m = midpoint(i0, i1);
+        walk(m, i1, i2, depth + 1);    // child[1]
+        walk(i2, i0, m, depth + 1);    // child[0]
+      }
+    } else {
+      // 2 split sides (3 children). Stream order reversed: child[2], child[1], child[0]
+      if (high === 0) {
+        // special_side=0: split i0-i1 and i2-i0
+        const m01 = midpoint(i0, i1);
+        const m20 = midpoint(i2, i0);
+        walk(i1, i2, m20, depth + 1);  // child[2]
+        walk(m01, i1, m20, depth + 1); // child[1]
+        walk(i0, m01, m20, depth + 1); // child[0]
+      } else if (high === 1) {
+        // special_side=1: split i1-i2 and i0-i1
+        const m12 = midpoint(i1, i2);
+        const m01 = midpoint(i0, i1);
+        walk(i2, i0, m01, depth + 1);  // child[2]
+        walk(m12, i2, m01, depth + 1); // child[1]
+        walk(i1, m12, m01, depth + 1); // child[0]
+      } else {
+        // special_side=2: split i2-i0 and i1-i2
+        const m20 = midpoint(i2, i0);
+        const m12 = midpoint(i1, i2);
+        walk(i0, i1, m12, depth + 1);  // child[2]
+        walk(m20, i0, m12, depth + 1); // child[1]
+        walk(i2, m20, m12, depth + 1); // child[0]
+      }
+    }
+  }
+
+  walk(vi0, vi1, vi2, 0);
+  return { faces: newFaces, faceColors: newFaceColors };
+}
+
+/**
+ * Get dominant color from a long mmu_segmentation hex string (fallback).
+ * Counts base-4 digit occurrences and returns the most common painted state.
+ */
+function decodeMmuSegmentationDominant(hexStr, colorMap, objColor) {
+  // Read nibbles reversed, walk tree, count leaf states
+  const nibbles = [];
+  for (let i = hexStr.length - 1; i >= 0; i--) {
+    nibbles.push(parseInt(hexStr[i], 16));
+  }
+
+  const stateCounts = {};
+  let pos = 0;
+
+  function walk() {
+    if (pos >= nibbles.length) return;
+    const nib = nibbles[pos++];
+    const splitSides = nib & 3;
+    const high = (nib >> 2) & 3;
+
+    if (splitSides === 0) {
+      let state = high < 3 ? high : (pos < nibbles.length ? nibbles[pos++] + 3 : 0);
+      stateCounts[state] = (stateCounts[state] || 0) + 1;
+    } else {
+      const numChildren = splitSides + 1;
+      for (let c = 0; c < numChildren; c++) walk();
+    }
+  }
+
+  walk();
+
+  // Find dominant non-zero state (state 0 = unpainted)
+  let maxCount = 0, dominant = 0;
+  for (const [state, count] of Object.entries(stateCounts)) {
+    const s = parseInt(state);
+    if (s > 0 && count > maxCount) { maxCount = count; dominant = s; }
+  }
+
+  if (dominant > 0) {
+    const extIdx = dominant - 1;
+    return colorMap.get(extIdx) || objColor || null;
+  }
+  return null;
+}
+
 /**
  * Decode a paint_color / mmu_segmentation hex value to a 0-based filament index.
  *
@@ -429,6 +628,26 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
       const v1 = parseInt(t.getAttribute('v1')) || 0;
       const v2 = parseInt(t.getAttribute('v2')) || 0;
       const v3 = parseInt(t.getAttribute('v3')) || 0;
+
+      // Check for mmu_segmentation with subdivision data
+      const mmuSeg = getMmuSegmentationAttr(t);
+      if (mmuSeg && mmuSeg.length > 8) {
+        // Long hex string = subdivision tree, expand into sub-triangles
+        const expanded = expandMmuTriangle(v1, v2, v3, mmuSeg, vertices, colorMap, objColor);
+        for (let j = 0; j < expanded.faces.length; j++) {
+          faces.push(expanded.faces[j]);
+          faceColors.push(expanded.faceColors[j]);
+          // Set vertex colors from face color
+          const fc = expanded.faceColors[j];
+          const f = expanded.faces[j];
+          if (fc && vertices[f[0]] && vertices[f[1]] && vertices[f[2]]) {
+            vertices[f[0]].color = fc.clone();
+            vertices[f[1]].color = fc.clone();
+            vertices[f[2]].color = fc.clone();
+          }
+        }
+        continue;
+      }
 
       let faceColor = getTriangleColor(t, colorMap);
       const effectiveColor = faceColor || objColor || new Color(0.8, 0.8, 0.8, 'default');
