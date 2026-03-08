@@ -113,7 +113,7 @@ function handleFile(file) {
           vertexLineIndices: parsed.vertexLineIndices,
           originalLines: parsed.originalLines
         };
-        if (page === 'viewer') {
+        if (page === 'viewer' || page === 'decimator') {
           loadModelToViewer(parsed.vertices, parsed.faces);
         } else {
           loadModelToProcessViewer(parsed.vertices, parsed.faces);
@@ -143,7 +143,7 @@ function handleFile(file) {
             vertices: parsed.vertices,
             faces: parsed.faces
           };
-          if (page === 'viewer') {
+          if (page === 'viewer' || page === 'decimator') {
             loadModelToViewer(parsed.vertices, parsed.faces);
           } else {
             loadModelToProcessViewer(parsed.vertices, parsed.faces);
@@ -179,7 +179,7 @@ function handleFile(file) {
               faces: parsed.faces,
               texture: parsed.texture
             };
-            if (page === 'viewer') {
+            if (page === 'viewer' || page === 'decimator') {
               loadModelToViewer(parsed.vertices, parsed.faces);
             } else {
               loadModelToProcessViewer(parsed.vertices, parsed.faces);
@@ -215,7 +215,7 @@ function handleFile(file) {
           faces: parsed.faces,
           faceColors: parsed.faceColors
         };
-        if (page === 'viewer') {
+        if (page === 'viewer' || page === 'decimator') {
           loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
         } else {
           loadModelToProcessViewer(parsed.vertices, parsed.faces, parsed.faceColors);

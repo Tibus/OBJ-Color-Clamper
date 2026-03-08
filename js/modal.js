@@ -11,14 +11,6 @@ function initModal() {
     });
   });
 
-  elements.downloadBtn.addEventListener('click', () => {
-    if (!processedOBJ) return;
-    // Remove any supported extension from filename
-    const baseName = loadedFile.name.replace(/\.(obj|stl|glb|3mf)$/i, '');
-    elements.exportFilename.value = baseName + '_clamped';
-    elements.modalOverlay.classList.add('show');
-  });
-
   elements.btnCancel.addEventListener('click', () => {
     elements.modalOverlay.classList.remove('show');
   });
@@ -30,7 +22,7 @@ function initModal() {
   });
 
   elements.btnConfirm.addEventListener('click', async () => {
-    const filename = elements.exportFilename.value.trim() || 'model_clamped';
+    const filename = elements.exportFilename.value.trim() || 'model';
     elements.modalOverlay.classList.remove('show');
 
     if (selectedFormat === 'obj') {
@@ -51,4 +43,11 @@ function initModal() {
       hideLoader();
     }
   });
+}
+
+function openExportModal(defaultSuffix) {
+  if (!processedOBJ) return;
+  const baseName = loadedFile.name.replace(/\.(obj|stl|glb|3mf)$/i, '');
+  elements.exportFilename.value = baseName + (defaultSuffix || '');
+  elements.modalOverlay.classList.add('show');
 }

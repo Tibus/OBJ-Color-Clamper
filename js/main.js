@@ -25,6 +25,20 @@ function init() {
     if (elements.processBtn) {
       elements.processBtn.addEventListener('click', processOBJ);
     }
+    if (elements.downloadBtn) {
+      elements.downloadBtn.addEventListener('click', () => openExportModal('_clamped'));
+    }
+  } else if (page === 'decimator') {
+    initViewer3D('viewer3DContainer');
+    initResultViewer3D('resultViewer3DContainer');
+    initDecimatorUI();
+    initModal();
+    if (elements.processBtn) {
+      elements.processBtn.addEventListener('click', processDecimation);
+    }
+    if (elements.downloadBtn) {
+      elements.downloadBtn.addEventListener('click', () => openExportModal('_decimated'));
+    }
   }
 }
 

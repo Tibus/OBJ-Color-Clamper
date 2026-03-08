@@ -1464,6 +1464,10 @@ function loadResultToViewer(vertices, faces) {
 
   resultViewer3D.mesh = new THREE.Mesh(geometry, material);
   resultViewer3D.mesh.renderOrder = 1;
+
+  // Rotate -90deg on X to convert Z-up to Y-up (same as main viewer)
+  resultViewer3D.mesh.rotation.x = -Math.PI / 2;
+
   resultViewer3D.scene.add(resultViewer3D.mesh);
 
   // Add wireframe overlay on decimator page
@@ -1481,6 +1485,7 @@ function loadResultToViewer(vertices, faces) {
       opacity: 0.15,
     });
     resultViewer3D.wireframe = new THREE.Mesh(geometry, wireMat);
+    resultViewer3D.wireframe.rotation.x = -Math.PI / 2;
     resultViewer3D.wireframe.renderOrder = 2;
     resultViewer3D.scene.add(resultViewer3D.wireframe);
   }
