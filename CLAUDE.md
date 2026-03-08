@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OBJ Color Clamper is a client-side web application for reducing vertex colors in 3D OBJ files to a limited palette. It's designed for 3D printing workflows where color palettes need to be constrained (e.g., multi-material printing on Bambu Lab or Prusa printers).
+3D Printer File Utility is a client-side web application with tools for 3D printing workflows. It includes a 3D file viewer and a color converter that reduces vertex colors to a limited palette (e.g., multi-material printing on Bambu Lab or Prusa printers).
 
 **Technology Stack**: Vanilla JavaScript (ES6+), HTML5, CSS3. No build step required - this is a pure static site.
 
@@ -75,7 +75,14 @@ Global state variables in `app.js`:
 
 ### UI Architecture
 
-The UI is organized into cards (defined in `index.html`):
+The app is split into three HTML pages:
+- `index.html` - Landing page with links to viewer and converter
+- `viewer.html` - 3D file viewer with AO, shadows, and color adjustments
+- `converter.html` - Color conversion pipeline with palette selection, processing, and export
+
+Each page uses `data-page` attribute on `<body>` to control page-specific initialization in `main.js`.
+
+The converter UI is organized into cards:
 1. File Upload - Drag-and-drop or click to browse
 2. Color Pool - Shows all 13 available colors
 3. Parameters - Number of colors (1-13) and island threshold

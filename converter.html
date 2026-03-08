@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Converter - 3D Printer File Utility</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="converter">
+  <div class="container">
+    <header>
+      <a href="index.html" class="back-link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </a>
+      <h1>Color <span class="accent">Converter</span></h1>
+      <p class="subtitle">Reduce vertex colors to a limited palette for multi-material 3D printing</p>
+    </header>
+
+    <!-- File Upload -->
+    <div class="card">
+      <h2>Upload</h2>
+      <div class="file-drop-zone" id="dropZone">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+        </div>
+        <div class="text">Drop your file here or <strong>click to browse</strong></div>
+        <div class="supported-formats">OBJ, STL, GLB, 3MF</div>
+        <input type="file" id="fileInput">
+      </div>
+      <div class="file-info" id="fileInfo">
+        <strong id="fileName"></strong><br>
+        <span id="fileStats"></span>
+      </div>
+    </div>
+
+    <!-- Process Viewer (Color Picker) -->
+    <div class="card" id="processViewerCard" style="display: none;">
+      <h2>Color Picker</h2>
+      <p class="viewer-instructions">Click on the model to pick colors</p>
+      <div class="viewer-wrapper">
+        <div id="processViewer3DContainer" class="viewer-container compact"></div>
+      </div>
+    </div>
+
+    <!-- Picked Colors -->
+    <div class="card" id="pickedPaletteCard" style="display: none;">
+      <h2>Picked Colors</h2>
+      <div class="toggle-row">
+        <label class="toggle-label" for="usePickedColorsToggle">
+          <span>Use picked colors</span>
+          <span class="toggle-help">Use your hand-picked colors instead of automatic selection</span>
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="usePickedColorsToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div id="pickedPaletteGrid" class="picked-palette-grid"></div>
+      <button class="btn-clear-palette" id="clearPaletteBtn">Clear All</button>
+    </div>
+
+    <!-- Color Pool Toggle -->
+    <div class="card">
+      <h2>Filament Palette</h2>
+      <div class="toggle-row">
+        <label class="toggle-label" for="useColorPool">
+          <span>Use filament color palette</span>
+          <span class="toggle-help">Match colors to available filaments</span>
+        </label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="useColorPool" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="color-grid" id="colorPool"></div>
+    </div>
+
+    <!-- Parameters -->
+    <div class="card">
+      <h2>Parameters</h2>
+      <div class="params-grid">
+        <div class="param-group">
+          <label for="numColors">Number of Colors</label>
+          <select id="numColors" class="param-select"></select>
+          <span class="param-help">Target colors in output</span>
+        </div>
+        <div class="param-group">
+          <label for="islandThreshold">Island Threshold</label>
+          <input type="number" id="islandThreshold" value="100" min="1" max="1000">
+          <span class="param-help">Merge regions smaller than this</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Process Button -->
+    <div class="card">
+      <button class="btn-process" id="processBtn" disabled>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        Process File
+      </button>
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text" id="progressText">Processing...</div>
+      </div>
+    </div>
+
+    <!-- Texture Preview (GLB only) -->
+    <div class="card" id="texturePreviewContainer" style="display: none;">
+      <h2>Texture Preview</h2>
+      <div class="texture-comparison">
+        <div class="texture-box">
+          <div class="texture-label">Original</div>
+          <div class="texture-preview" id="originalTexturePreview"></div>
+        </div>
+        <div class="texture-arrow">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+        </div>
+        <div class="texture-box">
+          <div class="texture-label">Clamped</div>
+          <div class="texture-preview" id="clampedTexturePreview"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Result 3D Viewer -->
+    <div class="card results" id="resultViewerCard">
+      <h2>Result Preview</h2>
+      <div id="resultViewer3DContainer" class="viewer-container"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="card results" id="resultsCard">
+      <h2>Color Distribution</h2>
+      <div class="stats-grid" id="statsGrid"></div>
+      <button class="btn-download" id="downloadBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+        </svg>
+        Export File
+      </button>
+    </div>
+
+    <!-- Log -->
+    <div class="card results" id="logCard">
+      <h2>Processing Log</h2>
+      <div class="log-container" id="logContainer"></div>
+    </div>
+  </div>
+
+  <!-- Download Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h3>Export File</h3>
+
+      <div class="modal-group">
+        <label for="exportFilename">Filename</label>
+        <input type="text" id="exportFilename" placeholder="model_clamped">
+      </div>
+
+      <div class="modal-group">
+        <label>Format</label>
+        <div class="format-options">
+          <div class="format-option selected" data-format="obj">
+            <div class="format-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+              </svg>
+            </div>
+            <div class="format-name">OBJ</div>
+            <div class="format-desc">Standard mesh format</div>
+          </div>
+          <div class="format-option" data-format="3mf">
+            <div class="format-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+                <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/>
+              </svg>
+            </div>
+            <div class="format-name">3MF</div>
+            <div class="format-desc">Bambu / Prusa compatible</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-buttons">
+        <button class="btn-cancel" id="btnCancel">Cancel</button>
+        <button class="btn-confirm" id="btnConfirm">Download</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loader Overlay -->
+  <div class="loader-overlay" id="loaderOverlay">
+    <div class="loader-content">
+      <div class="loader-spinner"></div>
+      <div class="loader-text" id="loaderText">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/FXAAShader.js"></script>
+  <script src="js/Color.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/pickedPaletteStorage.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/fileHandling.js"></script>
+  <script src="js/objParser.js"></script>
+  <script src="js/stlParser.js"></script>
+  <script src="js/glbParser.js"></script>
+  <script src="js/3mfParser.js"></script>
+  <script src="js/adjacency.js"></script>
+  <script src="js/colorProcessing.js"></script>
+  <script src="js/islands.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/textureQuantization.js"></script>
+  <script src="js/texturePreview.js"></script>
+  <script src="js/viewer3D.js"></script>
+  <script src="js/colorPicker.js"></script>
+  <script src="js/pickedPalette.js"></script>
+  <script src="js/processing.js"></script>
+  <script src="js/modal.js"></script>
+  <script src="js/tabs.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

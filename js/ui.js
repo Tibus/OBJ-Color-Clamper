@@ -5,11 +5,14 @@
 const elements = {};
 
 function initElements() {
+  // Shared elements
   elements.dropZone = document.getElementById('dropZone');
   elements.fileInput = document.getElementById('fileInput');
   elements.fileInfo = document.getElementById('fileInfo');
   elements.fileName = document.getElementById('fileName');
   elements.fileStats = document.getElementById('fileStats');
+
+  // Converter-specific elements (may be null on viewer page)
   elements.processBtn = document.getElementById('processBtn');
   elements.progressContainer = document.getElementById('progressContainer');
   elements.progressFill = document.getElementById('progressFill');
@@ -80,6 +83,7 @@ function initColorPoolToggle() {
 // ============================================================================
 
 function log(message, type = '') {
+  if (!elements.logContainer) return;
   const line = document.createElement('div');
   line.className = `log-line ${type}`;
   line.textContent = message;
@@ -88,6 +92,7 @@ function log(message, type = '') {
 }
 
 function clearLog() {
+  if (!elements.logContainer) return;
   elements.logContainer.innerHTML = '';
 }
 
@@ -96,8 +101,8 @@ function clearLog() {
 // ============================================================================
 
 function updateProgress(percent, text) {
-  elements.progressFill.style.width = `${percent}%`;
-  elements.progressText.textContent = text;
+  if (elements.progressFill) elements.progressFill.style.width = `${percent}%`;
+  if (elements.progressText) elements.progressText.textContent = text;
 }
 
 // ============================================================================

@@ -1063,8 +1063,9 @@ function initViewer3D(containerId) {
 function animate() {
   viewer3D.animationId = requestAnimationFrame(animate);
 
-  // Skip rendering when viewer tab is not active
-  if (typeof activeTab !== 'undefined' && activeTab !== 'viewer') return;
+  // Skip rendering when not on viewer page or viewer tab
+  const page = typeof getPageType === 'function' ? getPageType() : null;
+  if (!page && typeof activeTab !== 'undefined' && activeTab !== 'viewer') return;
 
   if (viewer3D.controls) {
     viewer3D.controls.update();
@@ -1187,8 +1188,9 @@ function initProcessViewer3D(containerId) {
 function animateProcessViewer() {
   processViewer3D.animationId = requestAnimationFrame(animateProcessViewer);
 
-  // Skip rendering when process tab is not active
-  if (typeof activeTab !== 'undefined' && activeTab !== 'process') return;
+  // Skip rendering when not on converter page or process tab
+  const page = typeof getPageType === 'function' ? getPageType() : null;
+  if (!page && typeof activeTab !== 'undefined' && activeTab !== 'process') return;
 
   if (processViewer3D.controls) {
     processViewer3D.controls.update();
@@ -1313,8 +1315,9 @@ function onResultViewerResize() {
 function animateResultViewer() {
   resultViewer3D.animationId = requestAnimationFrame(animateResultViewer);
 
-  // Skip rendering when process tab is not active
-  if (typeof activeTab !== 'undefined' && activeTab !== 'process') return;
+  // Skip rendering when not on converter page or process tab
+  const page = typeof getPageType === 'function' ? getPageType() : null;
+  if (!page && typeof activeTab !== 'undefined' && activeTab !== 'process') return;
 
   if (resultViewer3D.controls) {
     resultViewer3D.controls.update();

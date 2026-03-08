@@ -45,22 +45,23 @@ function initFileHandling() {
 }
 
 function handleFile(file) {
+  const page = getPageType();
   loadedFile = file;
   loadedFileType = getFileType(file.name);
   elements.fileName.textContent = file.name;
 
-  // Reset results section
-  elements.resultsCard.classList.remove('show');
-  elements.logCard.classList.remove('show');
-  elements.progressContainer.classList.remove('show');
-  elements.statsGrid.innerHTML = '';
-  clearLog();
+  // Reset results section (converter only)
+  if (elements.resultsCard) elements.resultsCard.classList.remove('show');
+  if (elements.logCard) elements.logCard.classList.remove('show');
+  if (elements.progressContainer) elements.progressContainer.classList.remove('show');
+  if (elements.statsGrid) elements.statsGrid.innerHTML = '';
+  if (typeof clearLog === 'function' && elements.logContainer) clearLog();
   const resultViewerCard = document.getElementById('resultViewerCard');
   if (resultViewerCard) {
     resultViewerCard.classList.remove('show');
   }
-  clearResultViewer();
-  hideTexturePreview();
+  if (typeof clearResultViewer === 'function') clearResultViewer();
+  if (typeof hideTexturePreview === 'function') hideTexturePreview();
 
   // Hide preview export buttons
   const exportPreviewBtn = document.getElementById('exportPreviewObjBtn');
@@ -77,8 +78,8 @@ function handleFile(file) {
   glbExtractedPalette = null;
 
   // Clear previous viewers
-  clearViewer();
-  clearProcessViewer();
+  if (typeof clearViewer === 'function') clearViewer();
+  if (typeof clearProcessViewer === 'function') clearProcessViewer();
   parsedModelData = null;
 
   // Hide viewer cards and tabs until model loads
@@ -101,7 +102,7 @@ function handleFile(file) {
       const faceCount = lines.filter(l => l.trim().startsWith('f ')).length;
       elements.fileStats.textContent = `${vertexCount.toLocaleString()} vertices, ${faceCount.toLocaleString()} faces`;
       elements.fileInfo.classList.add('show');
-      elements.processBtn.disabled = false;
+      if (elements.processBtn) elements.processBtn.disabled = false;
 
       // Parse and load into 3D viewer
       try {
@@ -112,9 +113,12 @@ function handleFile(file) {
           vertexLineIndices: parsed.vertexLineIndices,
           originalLines: parsed.originalLines
         };
-        loadModelToViewer(parsed.vertices, parsed.faces);
-        loadModelToProcessViewer(parsed.vertices, parsed.faces);
-        initColorPicker();
+        if (page === 'viewer') {
+          loadModelToViewer(parsed.vertices, parsed.faces);
+        } else {
+          loadModelToProcessViewer(parsed.vertices, parsed.faces);
+          initColorPicker();
+        }
       } catch (err) {
         console.error('Error parsing OBJ for viewer:', err);
       }
@@ -130,7 +134,7 @@ function handleFile(file) {
         const triangleCount = dataView.getUint32(80, true);
         elements.fileStats.textContent = `${triangleCount.toLocaleString()} triangles (STL)`;
         elements.fileInfo.classList.add('show');
-        elements.processBtn.disabled = false;
+        if (elements.processBtn) elements.processBtn.disabled = false;
 
         // Parse and load into 3D viewer
         try {
@@ -139,9 +143,12 @@ function handleFile(file) {
             vertices: parsed.vertices,
             faces: parsed.faces
           };
-          loadModelToViewer(parsed.vertices, parsed.faces);
-          loadModelToProcessViewer(parsed.vertices, parsed.faces);
-          initColorPicker();
+          if (page === 'viewer') {
+            loadModelToViewer(parsed.vertices, parsed.faces);
+          } else {
+            loadModelToProcessViewer(parsed.vertices, parsed.faces);
+            initColorPicker();
+          }
         } catch (err) {
           console.error('Error parsing STL for viewer:', err);
         }
@@ -162,7 +169,7 @@ function handleFile(file) {
         if (magic === 0x46546C67) {
           elements.fileStats.textContent = `GLB file (textures will be baked to vertex colors)`;
           elements.fileInfo.classList.add('show');
-          elements.processBtn.disabled = false;
+          if (elements.processBtn) elements.processBtn.disabled = false;
 
           // Parse and load into 3D viewer
           try {
@@ -172,9 +179,12 @@ function handleFile(file) {
               faces: parsed.faces,
               texture: parsed.texture
             };
-            loadModelToViewer(parsed.vertices, parsed.faces);
-            loadModelToProcessViewer(parsed.vertices, parsed.faces);
-            initColorPicker();
+            if (page === 'viewer') {
+              loadModelToViewer(parsed.vertices, parsed.faces);
+            } else {
+              loadModelToProcessViewer(parsed.vertices, parsed.faces);
+              initColorPicker();
+            }
           } catch (err) {
             console.error('Error parsing GLB for viewer:', err);
           }
@@ -198,16 +208,19 @@ function handleFile(file) {
 
         elements.fileStats.textContent = `${parsed.vertices.length.toLocaleString()} vertices, ${parsed.faces.length.toLocaleString()} faces (3MF)`;
         elements.fileInfo.classList.add('show');
-        elements.processBtn.disabled = false;
+        if (elements.processBtn) elements.processBtn.disabled = false;
 
         parsedModelData = {
           vertices: parsed.vertices,
           faces: parsed.faces,
           faceColors: parsed.faceColors
         };
-        loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
-        loadModelToProcessViewer(parsed.vertices, parsed.faces, parsed.faceColors);
-        initColorPicker();
+        if (page === 'viewer') {
+          loadModelToViewer(parsed.vertices, parsed.faces, parsed.faceColors);
+        } else {
+          loadModelToProcessViewer(parsed.vertices, parsed.faces, parsed.faceColors);
+          initColorPicker();
+        }
 
         // Show export buttons if the model has vertex colors
         const hasColors = parsed.vertices.some(v => v.color && v.color.name !== 'default');

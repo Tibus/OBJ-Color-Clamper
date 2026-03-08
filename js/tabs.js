@@ -6,10 +6,13 @@ const TABS_STORAGE_KEY = 'objColorClamper_activeTab';
 let activeTab = 'viewer';
 
 function initTabs() {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  if (tabBtns.length === 0) return;
+
   const saved = localStorage.getItem(TABS_STORAGE_KEY) || 'viewer';
   switchTab(saved);
 
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       switchTab(btn.dataset.tab);
     });
