@@ -51,6 +51,7 @@ function saveViewerSettings() {
     contrast: contrastSlider ? parseFloat(contrastSlider.value) : 1.0,
     saturation: saturationSlider ? parseFloat(saturationSlider.value) : 1.0,
     temperature: temperatureSlider ? parseFloat(temperatureSlider.value) : 0.0,
+    wireframeEnabled: viewer3D.wireframeEnabled,
   };
   try {
     localStorage.setItem(VIEWER_SETTINGS_KEY, JSON.stringify(settings));
@@ -223,6 +224,7 @@ let viewer3D = {
   aoEnabled: true,
   aoDebug: false,
   shadowEnabled: true,
+  wireframeEnabled: false,
   directionalLight: null,
   groundPlane: null,
   shadowBaseSpread: null
@@ -609,6 +611,27 @@ function loadModelToAOViewer(viewer, vertices, faces, faceColors) {
 
   viewer.scene.add(viewer.mesh);
 
+  // Add wireframe overlay
+  if (viewer.wireframe) {
+    viewer.scene.remove(viewer.wireframe);
+    viewer.wireframe.geometry.dispose();
+    viewer.wireframe.material.dispose();
+    viewer.wireframe = null;
+  }
+  const isDecimator = typeof getPageType === 'function' && getPageType() === 'decimator';
+  if (isDecimator || viewer.wireframeEnabled) {
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.15,
+    });
+    viewer.wireframe = new THREE.Mesh(geometry, wireMat);
+    viewer.wireframe.rotation.x = -Math.PI / 2;
+    viewer.wireframe.renderOrder = 1;
+    viewer.scene.add(viewer.wireframe);
+  }
+
   // Remove previous shadow ground
   if (viewer.groundPlane) {
     viewer.scene.remove(viewer.groundPlane);
@@ -779,6 +802,12 @@ function clearAOViewer(viewer) {
     viewer.mesh.material.dispose();
     viewer.mesh = null;
   }
+  if (viewer.wireframe && viewer.scene) {
+    viewer.scene.remove(viewer.wireframe);
+    viewer.wireframe.geometry.dispose();
+    viewer.wireframe.material.dispose();
+    viewer.wireframe = null;
+  }
   if (viewer.groundPlane && viewer.scene) {
     viewer.scene.remove(viewer.groundPlane);
     viewer.groundPlane.geometry.dispose();
@@ -868,6 +897,36 @@ function initViewer3D(containerId) {
       viewer3D.shadowEnabled = !viewer3D.shadowEnabled;
       processViewer3D.shadowEnabled = viewer3D.shadowEnabled;
       toggleShadowBtn.classList.toggle('active', viewer3D.shadowEnabled);
+      saveViewerSettings();
+    });
+  }
+
+  // Wireframe toggle button
+  viewer3D.wireframeEnabled = savedSettings ? !!savedSettings.wireframeEnabled : false;
+  const toggleWireframeBtn = document.getElementById('toggleWireframeBtn');
+  if (toggleWireframeBtn) {
+    toggleWireframeBtn.classList.toggle('active', viewer3D.wireframeEnabled);
+    toggleWireframeBtn.addEventListener('click', () => {
+      viewer3D.wireframeEnabled = !viewer3D.wireframeEnabled;
+      toggleWireframeBtn.classList.toggle('active', viewer3D.wireframeEnabled);
+      // Add or remove wireframe from scene
+      if (viewer3D.wireframeEnabled && viewer3D.mesh && !viewer3D.wireframe) {
+        const wireMat = new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.15,
+        });
+        viewer3D.wireframe = new THREE.Mesh(viewer3D.mesh.geometry, wireMat);
+        viewer3D.wireframe.rotation.x = viewer3D.mesh.rotation.x;
+        viewer3D.wireframe.renderOrder = 1;
+        viewer3D.scene.add(viewer3D.wireframe);
+      } else if (!viewer3D.wireframeEnabled && viewer3D.wireframe) {
+        viewer3D.scene.remove(viewer3D.wireframe);
+        viewer3D.wireframe.geometry = null; // shared with mesh, don't dispose
+        viewer3D.wireframe.material.dispose();
+        viewer3D.wireframe = null;
+      }
       saveViewerSettings();
     });
   }
@@ -1023,30 +1082,41 @@ function initViewer3D(containerId) {
 
   // Rotation buttons (affect both viewers)
   const halfPi = Math.PI / 2;
+  function syncWireframeRotation(viewer) {
+    if (viewer.wireframe && viewer.mesh) {
+      viewer.wireframe.rotation.copy(viewer.mesh.rotation);
+    }
+  }
   document.getElementById('rotateX')?.addEventListener('click', () => {
     if (!viewer3D.mesh) return;
     viewer3D.mesh.rotation.x += halfPi;
+    syncWireframeRotation(viewer3D);
     updateGroundAndShadowForViewer(viewer3D);
     if (processViewer3D.mesh) {
       processViewer3D.mesh.rotation.x += halfPi;
+      syncWireframeRotation(processViewer3D);
       updateGroundAndShadowForViewer(processViewer3D);
     }
   });
   document.getElementById('rotateY')?.addEventListener('click', () => {
     if (!viewer3D.mesh) return;
     viewer3D.mesh.rotation.y += halfPi;
+    syncWireframeRotation(viewer3D);
     updateGroundAndShadowForViewer(viewer3D);
     if (processViewer3D.mesh) {
       processViewer3D.mesh.rotation.y += halfPi;
+      syncWireframeRotation(processViewer3D);
       updateGroundAndShadowForViewer(processViewer3D);
     }
   });
   document.getElementById('rotateZ')?.addEventListener('click', () => {
     if (!viewer3D.mesh) return;
     viewer3D.mesh.rotation.z += halfPi;
+    syncWireframeRotation(viewer3D);
     updateGroundAndShadowForViewer(viewer3D);
     if (processViewer3D.mesh) {
       processViewer3D.mesh.rotation.z += halfPi;
+      syncWireframeRotation(processViewer3D);
       updateGroundAndShadowForViewer(processViewer3D);
     }
   });
@@ -1396,6 +1466,25 @@ function loadResultToViewer(vertices, faces) {
   resultViewer3D.mesh.renderOrder = 1;
   resultViewer3D.scene.add(resultViewer3D.mesh);
 
+  // Add wireframe overlay on decimator page
+  if (resultViewer3D.wireframe) {
+    resultViewer3D.scene.remove(resultViewer3D.wireframe);
+    resultViewer3D.wireframe.geometry.dispose();
+    resultViewer3D.wireframe.material.dispose();
+    resultViewer3D.wireframe = null;
+  }
+  if (typeof getPageType === 'function' && getPageType() === 'decimator') {
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.15,
+    });
+    resultViewer3D.wireframe = new THREE.Mesh(geometry, wireMat);
+    resultViewer3D.wireframe.renderOrder = 2;
+    resultViewer3D.scene.add(resultViewer3D.wireframe);
+  }
+
   // Auto-fit camera to bounds
   fitResultCameraToObject(resultViewer3D.mesh);
 
@@ -1429,6 +1518,12 @@ function clearResultViewer() {
     resultViewer3D.mesh.geometry.dispose();
     resultViewer3D.mesh.material.dispose();
     resultViewer3D.mesh = null;
+  }
+  if (resultViewer3D.wireframe && resultViewer3D.scene) {
+    resultViewer3D.scene.remove(resultViewer3D.wireframe);
+    resultViewer3D.wireframe.geometry.dispose();
+    resultViewer3D.wireframe.material.dispose();
+    resultViewer3D.wireframe = null;
   }
   resultViewer3D.originalColors = null;
   resultViewer3D.vertices = null;
