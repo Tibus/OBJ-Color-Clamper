@@ -38,7 +38,7 @@ function getMmuSegmentationAttr(triangle) {
  *   - 1 split side (2 children): bisect on one edge
  *   - 2 split sides (3 children): split on two edges
  */
-function expandMmuTriangle(vi0, vi1, vi2, hexStr, vertices, colorMap, objColor) {
+function expandMmuTriangle(vi0, vi1, vi2, hexStr, vertices, colorMap, objColor, sharedMidCache) {
   // Read nibbles right-to-left (reversed encoding)
   const nibbles = [];
   for (let i = hexStr.length - 1; i >= 0; i--) {
@@ -49,8 +49,8 @@ function expandMmuTriangle(vi0, vi1, vi2, hexStr, vertices, colorMap, objColor) 
   const newFaceColors = [];
   let pos = 0;
 
-  // Cache midpoint vertices to avoid duplicates
-  const midCache = new Map();
+  // Use shared midpoint cache to ensure adjacent triangles share midpoint vertices
+  const midCache = sharedMidCache || new Map();
   function midpoint(a, b) {
     const key = Math.min(a, b) + '_' + Math.max(a, b);
     if (midCache.has(key)) return midCache.get(key);
@@ -589,8 +589,8 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
 
     const mesh = meshes[0];
     const vertices = [];
-    const faces = [];
-    const faceColors = [];
+    let faces = [];
+    let faceColors = [];
 
     // Parse vertices
     const verticesEl = ns === ''
@@ -623,6 +623,9 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
       ? (ns === '' ? trianglesEl.getElementsByTagName('triangle') : trianglesEl.getElementsByTagNameNS(ns, 'triangle'))
       : [];
 
+    // Shared midpoint cache across all triangles so adjacent subdivisions share vertices
+    const sharedMidCache = new Map();
+
     for (let i = 0; i < triangleEls.length; i++) {
       const t = triangleEls[i];
       const v1 = parseInt(t.getAttribute('v1')) || 0;
@@ -633,18 +636,10 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
       const mmuSeg = getMmuSegmentationAttr(t);
       if (mmuSeg && mmuSeg.length > 8) {
         // Long hex string = subdivision tree, expand into sub-triangles
-        const expanded = expandMmuTriangle(v1, v2, v3, mmuSeg, vertices, colorMap, objColor);
+        const expanded = expandMmuTriangle(v1, v2, v3, mmuSeg, vertices, colorMap, objColor, sharedMidCache);
         for (let j = 0; j < expanded.faces.length; j++) {
           faces.push(expanded.faces[j]);
           faceColors.push(expanded.faceColors[j]);
-          // Set vertex colors from face color
-          const fc = expanded.faceColors[j];
-          const f = expanded.faces[j];
-          if (fc && vertices[f[0]] && vertices[f[1]] && vertices[f[2]]) {
-            vertices[f[0]].color = fc.clone();
-            vertices[f[1]].color = fc.clone();
-            vertices[f[2]].color = fc.clone();
-          }
         }
         continue;
       }
@@ -652,17 +647,84 @@ function parseObjectsFromDoc(doc, ns, colorMap, filamentColors = [], partExtrude
       let faceColor = getTriangleColor(t, colorMap);
       const effectiveColor = faceColor || objColor || new Color(0.8, 0.8, 0.8, 'default');
 
-      // Store per-face color for accurate viewer display
       faceColors.push(effectiveColor);
+      faces.push([v1, v2, v3]);
+    }
 
-      // Also set vertex colors (used by processing pipeline)
-      if (faceColor && vertices[v1] && vertices[v2] && vertices[v3]) {
-        vertices[v1].color = faceColor.clone();
-        vertices[v2].color = faceColor.clone();
-        vertices[v3].color = faceColor.clone();
+    // T-junction fix: split non-subdivided triangles that have midpoints on their edges
+    if (sharedMidCache.size > 0) {
+      const fixedFaces = [];
+      const fixedFaceColors = [];
+
+      for (let i = 0; i < faces.length; i++) {
+        const face = faces[i];
+        const fc = faceColors[i];
+        const [a, b, c] = face;
+
+        // Check which edges have midpoints from subdivision
+        const mAB = sharedMidCache.get(Math.min(a, b) + '_' + Math.max(a, b));
+        const mBC = sharedMidCache.get(Math.min(b, c) + '_' + Math.max(b, c));
+        const mCA = sharedMidCache.get(Math.min(c, a) + '_' + Math.max(c, a));
+
+        const splits = (mAB !== undefined ? 1 : 0) + (mBC !== undefined ? 1 : 0) + (mCA !== undefined ? 1 : 0);
+
+        if (splits === 0) {
+          // No midpoints on edges, keep as-is
+          fixedFaces.push(face);
+          fixedFaceColors.push(fc);
+        } else if (splits === 3) {
+          // All 3 edges have midpoints: 4 sub-triangles
+          fixedFaces.push([a, mAB, mCA]);
+          fixedFaces.push([mAB, b, mBC]);
+          fixedFaces.push([mCA, mBC, c]);
+          fixedFaces.push([mAB, mBC, mCA]);
+          for (let k = 0; k < 4; k++) fixedFaceColors.push(fc);
+        } else if (splits === 1) {
+          // 1 edge has a midpoint: 2 sub-triangles
+          if (mAB !== undefined) {
+            fixedFaces.push([a, mAB, c]);
+            fixedFaces.push([mAB, b, c]);
+          } else if (mBC !== undefined) {
+            fixedFaces.push([a, b, mBC]);
+            fixedFaces.push([a, mBC, c]);
+          } else {
+            fixedFaces.push([a, b, mCA]);
+            fixedFaces.push([mCA, b, c]);
+          }
+          fixedFaceColors.push(fc);
+          fixedFaceColors.push(fc);
+        } else {
+          // 2 edges have midpoints: 3 sub-triangles
+          if (mAB !== undefined && mBC !== undefined) {
+            fixedFaces.push([a, mAB, c]);
+            fixedFaces.push([mAB, b, mBC]);
+            fixedFaces.push([mAB, mBC, c]);
+          } else if (mBC !== undefined && mCA !== undefined) {
+            fixedFaces.push([a, b, mBC]);
+            fixedFaces.push([a, mBC, mCA]);
+            fixedFaces.push([mBC, c, mCA]);
+          } else {
+            fixedFaces.push([a, mAB, mCA]);
+            fixedFaces.push([mAB, b, c]);
+            fixedFaces.push([mAB, c, mCA]);
+          }
+          for (let k = 0; k < 3; k++) fixedFaceColors.push(fc);
+        }
       }
 
-      faces.push([v1, v2, v3]);
+      faces = fixedFaces;
+      faceColors = fixedFaceColors;
+    }
+
+    // Set vertex colors from face colors
+    for (let i = 0; i < faces.length; i++) {
+      const f = faces[i];
+      const fc = faceColors[i];
+      if (fc) {
+        for (const vi of f) {
+          if (vertices[vi]) vertices[vi].color = fc.clone();
+        }
+      }
     }
 
     result.set(objId, { vertices, faces, faceColors });
