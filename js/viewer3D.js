@@ -41,6 +41,9 @@ function saveViewerSettings() {
   const contrastSlider = document.getElementById('contrastSlider');
   const saturationSlider = document.getElementById('saturationSlider');
   const temperatureSlider = document.getElementById('temperatureSlider');
+  const fdmLayerHeightSlider = document.getElementById('fdmLayerHeightSlider');
+  const fdmLayerStrengthSlider = document.getElementById('fdmLayerStrengthSlider');
+  const fdmContaminationSlider = document.getElementById('fdmContaminationSlider');
   const settings = {
     aoEnabled: viewer3D.aoEnabled,
     shadowEnabled: viewer3D.shadowEnabled,
@@ -52,6 +55,10 @@ function saveViewerSettings() {
     saturation: saturationSlider ? parseFloat(saturationSlider.value) : 1.0,
     temperature: temperatureSlider ? parseFloat(temperatureSlider.value) : 0.0,
     wireframeEnabled: viewer3D.wireframeEnabled,
+    fdmEnabled: viewer3D.fdmEnabled,
+    fdmLayerHeight: fdmLayerHeightSlider ? parseFloat(fdmLayerHeightSlider.value) : 0.2,
+    fdmLayerStrength: fdmLayerStrengthSlider ? parseFloat(fdmLayerStrengthSlider.value) : 0.5,
+    fdmContamination: fdmContaminationSlider ? parseFloat(fdmContaminationSlider.value) : 0.3,
   };
   try {
     localStorage.setItem(VIEWER_SETTINGS_KEY, JSON.stringify(settings));
@@ -178,6 +185,96 @@ const AO_FRAGMENT_SHADER = [
   '    lit = clamp(lit, 0.0, 1.0);',
   '    gl_FragColor = vec4(lit, color.a);',
   '  }',
+  '}'
+].join('\n');
+
+// ============================================================================
+// FDM Print Simulation Shader
+// ============================================================================
+
+const FDM_FRAGMENT_SHADER = [
+  'uniform sampler2D tDiffuse;',
+  'uniform sampler2D tDepth;',
+  'uniform vec2 resolution;',
+  'uniform float cameraFar;',
+  'uniform float proj00;',
+  'uniform float proj11;',
+  'uniform mat4 invViewMatrix;',
+  'uniform float layerHeight;',
+  'uniform float layerStrength;',
+  'uniform float contamination;',
+  'uniform float fdmEnabled;',
+  'varying vec2 vUv;',
+  '',
+  'float fdmLogDepthToViewZ(float d) {',
+  '  return 1.0 - pow(2.0, d * log2(cameraFar + 1.0));',
+  '}',
+  '',
+  'vec3 fdmViewPosAt(vec2 uv) {',
+  '  float d = texture2D(tDepth, uv).x;',
+  '  if (d >= 1.0) return vec3(0.0, 0.0, 1e5);',
+  '  float vz = fdmLogDepthToViewZ(d);',
+  '  vec2 ndc = (uv - 0.5) * 2.0;',
+  '  return vec3(ndc.x * (-vz) / proj00, ndc.y * (-vz) / proj11, vz);',
+  '}',
+  '',
+  'void main() {',
+  '  vec4 color = texture2D(tDiffuse, vUv);',
+  '  float d = texture2D(tDepth, vUv).x;',
+  '  if (fdmEnabled < 0.5 || d >= 1.0) {',
+  '    gl_FragColor = color;',
+  '    return;',
+  '  }',
+  '',
+  '  vec2 texel = 1.0 / resolution;',
+  '  vec3 viewPos = fdmViewPosAt(vUv);',
+  '  vec3 worldPos = (invViewMatrix * vec4(viewPos, 1.0)).xyz;',
+  '',
+  '  // === Layer Lines ===',
+  '  float lh = max(layerHeight, 0.0001);',
+  '  float layerFrac = fract(worldPos.y / lh);',
+  '  // Groove at layer boundaries (bottom 15% and top 15%)',
+  '  float groove = smoothstep(0.0, 0.15, layerFrac) * smoothstep(1.0, 0.85, layerFrac);',
+  '  // Subtle bead roundness within each layer',
+  '  float bead = 1.0 + 0.015 * sin(layerFrac * 3.14159);',
+  '  float layerMul = mix(1.0, groove * bead, layerStrength);',
+  '',
+  '  // === Color Contamination ===',
+  '  vec3 result = color.rgb;',
+  '  if (contamination > 0.01) {',
+  '    vec3 sumDiff = vec3(0.0);',
+  '    float wTotal = 0.0;',
+  '    float radius = 3.0;',
+  '    for (int i = 0; i < 8; i++) {',
+  '      float angle = float(i) * 0.7854;',
+  '      vec2 off = vec2(cos(angle), sin(angle)) * texel * radius;',
+  '      float sd = texture2D(tDepth, vUv + off).x;',
+  '      if (sd >= 1.0) continue;',
+  '      vec3 sc = texture2D(tDiffuse, vUv + off).rgb;',
+  '      float cdiff = length(sc - color.rgb);',
+  '      if (cdiff > 0.05) {',
+  '        sumDiff += sc * cdiff;',
+  '        wTotal += cdiff;',
+  '      }',
+  '    }',
+  '    if (wTotal > 0.01) {',
+  '      result = mix(color.rgb, sumDiff / wTotal, contamination * 0.25);',
+  '    }',
+  '  }',
+  '',
+  '  // === Edge Rounding (silhouette softening) ===',
+  '  float edge = 0.0;',
+  '  for (int i = 0; i < 8; i++) {',
+  '    float angle = float(i) * 0.7854;',
+  '    vec2 off = vec2(cos(angle), sin(angle)) * texel * 2.0;',
+  '    float sd = texture2D(tDepth, vUv + off).x;',
+  '    if (sd >= 1.0) edge += 1.0;',
+  '  }',
+  '  edge /= 8.0;',
+  '  float edgeDarken = mix(1.0, 0.88, edge * layerStrength);',
+  '',
+  '  result = clamp(result * layerMul * edgeDarken, 0.0, 1.0);',
+  '  gl_FragColor = vec4(result, color.a);',
   '}'
 ].join('\n');
 
@@ -399,10 +496,37 @@ function setupAOPipeline(viewer, containerId, opts = {}) {
     depthTest: false
   });
 
+  // FDM simulation render target
+  viewer.fdmRT = new THREE.WebGLRenderTarget(ssW, ssH, {
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter
+  });
+
+  // FDM simulation material
+  viewer.fdmMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      tDiffuse: { value: null },
+      tDepth: { value: viewer.beautyRT.depthTexture },
+      resolution: { value: new THREE.Vector2(ssW, ssH) },
+      cameraFar: { value: 1000.0 },
+      proj00: { value: 1.0 },
+      proj11: { value: 1.0 },
+      invViewMatrix: { value: new THREE.Matrix4() },
+      layerHeight: { value: 0.2 },
+      layerStrength: { value: 0.5 },
+      contamination: { value: 0.3 },
+      fdmEnabled: { value: 0.0 }
+    },
+    vertexShader: AO_VERTEX_SHADER,
+    fragmentShader: FDM_FRAGMENT_SHADER,
+    depthWrite: false,
+    depthTest: false
+  });
+
   // Default state
   viewer.aoEnabled = true;
   viewer.aoDebug = false;
   viewer.shadowEnabled = true;
+  viewer.fdmEnabled = false;
 
   return true;
 }
@@ -447,8 +571,23 @@ function renderAOPipeline(viewer, background) {
     r.render(viewer.fsScene, viewer.fsCamera);
   }
 
+  // Step 2.5: FDM simulation pass
+  if (viewer.fdmEnabled && viewer.fdmMaterial) {
+    const fdm = viewer.fdmMaterial;
+    fdm.uniforms.tDiffuse.value = viewer.aoRT.texture;
+    fdm.uniforms.cameraFar.value = camera.far;
+    fdm.uniforms.proj00.value = camera.projectionMatrix.elements[0];
+    fdm.uniforms.proj11.value = camera.projectionMatrix.elements[5];
+    fdm.uniforms.invViewMatrix.value.copy(camera.matrixWorld);
+    fdm.uniforms.fdmEnabled.value = 1.0;
+
+    viewer.fsQuad.material = fdm;
+    r.setRenderTarget(viewer.fdmRT);
+    r.render(viewer.fsScene, viewer.fsCamera);
+  }
+
   // Step 3: FXAA pass
-  const source = viewer.aoRT;
+  const source = (viewer.fdmEnabled && viewer.fdmRT) ? viewer.fdmRT : viewer.aoRT;
   viewer.fxaaMaterial.uniforms['tDiffuse'].value = source.texture;
   viewer.fsQuad.material = viewer.fxaaMaterial;
 
@@ -788,7 +927,9 @@ function resizeAOViewer(viewer) {
   if (viewer.beautyRT) viewer.beautyRT.setSize(ssW, ssH);
   if (viewer.aoRT) viewer.aoRT.setSize(ssW, ssH);
   if (viewer.shadowRT) viewer.shadowRT.setSize(ssW, ssH);
+  if (viewer.fdmRT) viewer.fdmRT.setSize(ssW, ssH);
   if (viewer.aoMaterial) viewer.aoMaterial.uniforms.resolution.value.set(ssW, ssH);
+  if (viewer.fdmMaterial) viewer.fdmMaterial.uniforms.resolution.value.set(ssW, ssH);
   if (viewer.fxaaMaterial) viewer.fxaaMaterial.uniforms['resolution'].value.set(1.0 / ssW, 1.0 / ssH);
 }
 
@@ -928,6 +1069,75 @@ function initViewer3D(containerId) {
         viewer3D.wireframe = null;
       }
       saveViewerSettings();
+    });
+  }
+
+  // FDM toggle button
+  viewer3D.fdmEnabled = savedSettings ? !!savedSettings.fdmEnabled : false;
+  const toggleFdmBtn = document.getElementById('toggleFdmBtn');
+  const fdmSettings = document.querySelectorAll('.fdm-setting');
+  function updateFdmSettingsVisibility() {
+    fdmSettings.forEach(el => { el.style.display = viewer3D.fdmEnabled ? '' : 'none'; });
+  }
+  if (toggleFdmBtn) {
+    toggleFdmBtn.classList.toggle('active', viewer3D.fdmEnabled);
+    updateFdmSettingsVisibility();
+    toggleFdmBtn.addEventListener('click', () => {
+      viewer3D.fdmEnabled = !viewer3D.fdmEnabled;
+      toggleFdmBtn.classList.toggle('active', viewer3D.fdmEnabled);
+      updateFdmSettingsVisibility();
+      saveViewerSettings();
+    });
+  }
+
+  // FDM Layer Height slider
+  const fdmLayerHeightSlider = document.getElementById('fdmLayerHeightSlider');
+  const fdmLayerHeightValue = document.getElementById('fdmLayerHeightValue');
+  if (fdmLayerHeightSlider) {
+    if (savedSettings && savedSettings.fdmLayerHeight != null) {
+      fdmLayerHeightSlider.value = savedSettings.fdmLayerHeight;
+      fdmLayerHeightValue.textContent = savedSettings.fdmLayerHeight.toFixed(2) + ' mm';
+      viewer3D.fdmMaterial.uniforms.layerHeight.value = savedSettings.fdmLayerHeight;
+    }
+    fdmLayerHeightSlider.addEventListener('input', () => {
+      const val = parseFloat(fdmLayerHeightSlider.value);
+      viewer3D.fdmMaterial.uniforms.layerHeight.value = val;
+      fdmLayerHeightValue.textContent = val.toFixed(2) + ' mm';
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // FDM Layer Strength slider
+  const fdmLayerStrengthSlider = document.getElementById('fdmLayerStrengthSlider');
+  const fdmLayerStrengthValue = document.getElementById('fdmLayerStrengthValue');
+  if (fdmLayerStrengthSlider) {
+    if (savedSettings && savedSettings.fdmLayerStrength != null) {
+      fdmLayerStrengthSlider.value = savedSettings.fdmLayerStrength;
+      fdmLayerStrengthValue.textContent = savedSettings.fdmLayerStrength.toFixed(2);
+      viewer3D.fdmMaterial.uniforms.layerStrength.value = savedSettings.fdmLayerStrength;
+    }
+    fdmLayerStrengthSlider.addEventListener('input', () => {
+      const val = parseFloat(fdmLayerStrengthSlider.value);
+      viewer3D.fdmMaterial.uniforms.layerStrength.value = val;
+      fdmLayerStrengthValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
+    });
+  }
+
+  // FDM Contamination slider
+  const fdmContaminationSlider = document.getElementById('fdmContaminationSlider');
+  const fdmContaminationValue = document.getElementById('fdmContaminationValue');
+  if (fdmContaminationSlider) {
+    if (savedSettings && savedSettings.fdmContamination != null) {
+      fdmContaminationSlider.value = savedSettings.fdmContamination;
+      fdmContaminationValue.textContent = savedSettings.fdmContamination.toFixed(2);
+      viewer3D.fdmMaterial.uniforms.contamination.value = savedSettings.fdmContamination;
+    }
+    fdmContaminationSlider.addEventListener('input', () => {
+      const val = parseFloat(fdmContaminationSlider.value);
+      viewer3D.fdmMaterial.uniforms.contamination.value = val;
+      fdmContaminationValue.textContent = val.toFixed(2);
+      saveViewerSettingsDebounced();
     });
   }
 

@@ -1080,6 +1080,12 @@ h1 .accent {
   margin-bottom: 0;
 }
 
+.viewer-setting-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: var(--space-xs) 0;
+}
+
 .viewer-setting-row label {
   grid-column: 1;
   grid-row: 1;
