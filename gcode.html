@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G-code Analyzer - 3D Printer File Utility</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="gcode">
+  <div class="container">
+    <header>
+      <a href="index.html" class="back-link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+      </a>
+      <h1>G-code <span class="accent">Analyzer</span></h1>
+      <p class="subtitle">Extract print statistics from Bambu Lab G-code files</p>
+    </header>
+
+    <!-- File Upload -->
+    <div class="card">
+      <h2>Upload</h2>
+      <div class="file-drop-zone" id="dropZone">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+        </div>
+        <div class="text">Drop your G-code file here or <strong>click to browse</strong></div>
+        <div class="supported-formats">.gcode, .gcode.3mf</div>
+        <input type="file" id="fileInput" accept=".gcode,.3mf">
+      </div>
+      <div class="file-info" id="fileInfo">
+        <strong id="fileName"></strong><br>
+        <span id="fileStats"></span>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="resultsSection" style="display: none;">
+
+      <!-- Thumbnail -->
+      <div class="card" id="thumbnailCard" style="display: none;">
+        <h2>Preview</h2>
+        <div id="thumbnailContainer" class="gcode-thumbnail-container"></div>
+      </div>
+
+      <!-- Printer & Profile -->
+      <div class="card gcode-stat-group">
+        <h2>Printer</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Model</div>
+            <div class="gcode-stat-value" id="statPrinter"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Nozzle</div>
+            <div class="gcode-stat-value" id="statNozzle"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Profile</div>
+            <div class="gcode-stat-value" id="statProfile"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Time & Filament -->
+      <div class="card gcode-stat-group">
+        <h2>Time & Filament</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Estimated Time</div>
+            <div class="gcode-stat-value" id="statTime"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Filament Weight</div>
+            <div class="gcode-stat-value" id="statFilamentG"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Filament Length</div>
+            <div class="gcode-stat-value" id="statFilamentMm"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dimensions -->
+      <div class="card gcode-stat-group">
+        <h2>Dimensions</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Bounding Box</div>
+            <div class="gcode-stat-value" id="statDimensions"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Layers -->
+      <div class="card gcode-stat-group">
+        <h2>Layers</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Total Layers</div>
+            <div class="gcode-stat-value" id="statLayers"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Layer Height</div>
+            <div class="gcode-stat-value" id="statLayerHeight"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">First Layer Height</div>
+            <div class="gcode-stat-value" id="statFirstLayerHeight"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Temperatures -->
+      <div class="card gcode-stat-group">
+        <h2>Temperatures</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Nozzle</div>
+            <div class="gcode-stat-value" id="statNozzleTemp"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Bed</div>
+            <div class="gcode-stat-value" id="statBedTemp"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Chamber</div>
+            <div class="gcode-stat-value" id="statChamberTemp"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Print Settings -->
+      <div class="card gcode-stat-group">
+        <h2>Print Settings</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Wall Loops</div>
+            <div class="gcode-stat-value" id="statWallLoops"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Top Layers</div>
+            <div class="gcode-stat-value" id="statTopLayers"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Bottom Layers</div>
+            <div class="gcode-stat-value" id="statBottomLayers"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Infill Density</div>
+            <div class="gcode-stat-value" id="statInfillDensity"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Infill Pattern</div>
+            <div class="gcode-stat-value" id="statInfillPattern"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Support</div>
+            <div class="gcode-stat-value" id="statSupport"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Speeds -->
+      <div class="card gcode-stat-group">
+        <h2>Speeds</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Outer Wall</div>
+            <div class="gcode-stat-value" id="statOuterWallSpeed"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Inner Wall</div>
+            <div class="gcode-stat-value" id="statInnerWallSpeed"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Infill</div>
+            <div class="gcode-stat-value" id="statInfillSpeed"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Top Surface</div>
+            <div class="gcode-stat-value" id="statTopSpeed"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Travel</div>
+            <div class="gcode-stat-value" id="statTravelSpeed"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">First Layer</div>
+            <div class="gcode-stat-value" id="statFirstLayerSpeed"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Multi-tool -->
+      <div class="card gcode-stat-group">
+        <h2>Multi-material</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Tool Changes</div>
+            <div class="gcode-stat-value" id="statToolChanges"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Retractions</div>
+            <div class="gcode-stat-value" id="statRetractions"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Waste / Purge -->
+      <div class="card gcode-stat-group" id="wasteCard">
+        <h2>Filament Waste</h2>
+        <div class="gcode-stats-grid">
+          <div class="gcode-stat-item gcode-stat-waste">
+            <div class="gcode-stat-label">Total Waste</div>
+            <div class="gcode-stat-value" id="statTotalWaste"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Purge (flushes)</div>
+            <div class="gcode-stat-value" id="statFlushWaste"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Wipe Tower</div>
+            <div class="gcode-stat-value" id="statTowerWaste"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Flush Count</div>
+            <div class="gcode-stat-value" id="statFlushCount"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Flush Multiplier</div>
+            <div class="gcode-stat-value" id="statFlushMultiplier"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Flush into Infill</div>
+            <div class="gcode-stat-value" id="statFlushIntoInfill"></div>
+          </div>
+          <div class="gcode-stat-item">
+            <div class="gcode-stat-label">Flush into Support</div>
+            <div class="gcode-stat-value" id="statFlushIntoSupport"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filaments Table -->
+      <div class="card" id="filamentsCard" style="display: none;">
+        <h2>Filaments</h2>
+        <div class="gcode-table-wrapper">
+          <table class="gcode-table">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Type</th>
+                <th>Weight</th>
+                <th>Length</th>
+              </tr>
+            </thead>
+            <tbody id="filamentsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Objects Table -->
+      <div class="card" id="objectsCard" style="display: none;">
+        <h2>Objects</h2>
+        <div class="gcode-table-wrapper">
+          <table class="gcode-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Name</th>
+              </tr>
+            </thead>
+            <tbody id="objectsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="js/gcodeParser.js"></script>
+  <script src="js/gcodeAnalyzer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', initGcodeAnalyzer);
+  </script>
+</body>
+</html>
