@@ -42,6 +42,8 @@ function initGcodeAnalyzer() {
 
     const is3mf = file.name.toLowerCase().endsWith('.3mf');
 
+    showLoader('Analyzing G-code...');
+
     if (is3mf) {
       const reader = new FileReader();
       reader.onload = async e => {
@@ -52,13 +54,18 @@ function initGcodeAnalyzer() {
           console.error('Error reading .gcode.3mf:', err);
           fileStats.textContent = 'Error: ' + err.message;
         }
+        hideLoader();
       };
       reader.readAsArrayBuffer(file);
     } else {
       const reader = new FileReader();
       reader.onload = e => {
-        const stats = parseGcode(e.target.result);
-        displayGcodeStats(stats, []);
+        // setTimeout to let the loader render before sync parsing
+        setTimeout(() => {
+          const stats = parseGcode(e.target.result);
+          displayGcodeStats(stats, []);
+          hideLoader();
+        }, 50);
       };
       reader.readAsText(file);
     }
@@ -251,7 +258,7 @@ function initGcodeAnalyzer() {
       stats.filaments.forEach(f => {
         const tr = document.createElement('tr');
         const colorSwatch = f.color
-          ? `<span class="filament-swatch" style="background:${f.color}"></span>`
+          ? `<span class="filament-swatch" style="background:${f.color}">${f.color}</span>`
           : '';
         tr.innerHTML = `
           <td>${f.index + 1}</td>
